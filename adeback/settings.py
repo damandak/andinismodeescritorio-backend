@@ -15,12 +15,6 @@ from dotenv import load_dotenv
 import os
 
 load_dotenv()
-print(os.environ.get('SECRET_KEY'))
-print(os.environ.get('DEBUG_BOOL'))
-print(os.environ.get('ALLOWED_HOSTS'))
-print(os.environ.get('DB_ENGINE'))
-print(os.environ.get('DB_NAME'))
-print(os.environ.get('DB_USER'))
 
 # Build paths inside the project like this: BASE_DIR / 'subdir'.
 BASE_DIR = Path(__file__).resolve().parent.parent

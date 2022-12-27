@@ -68,7 +68,6 @@ class MountainRoutesView(ListAPIView):
     mountain_id = self.kwargs['pk']
     if mountain_id is not None:
       queryset = queryset.filter(mountain=mountain_id) # Filter the queryset by the mountain parameter
-      print(queryset)
     return queryset
 
 class MountainNearbyView(ListAPIView):
@@ -96,7 +95,6 @@ class MountainAscentsView(ListAPIView):
     mountain_id = self.kwargs['pk']
     if mountain_id is not None:
       queryset = queryset.filter(route__mountain=mountain_id) # Filter the queryset by the mountain parameter
-      print(queryset)
     return queryset
 
 class AndinistBasicView(RetrieveAPIView):
@@ -217,7 +215,6 @@ class RouteAscentsView(ListAPIView):
     route_id = self.kwargs['pk']
     if route_id is not None:
       queryset = queryset.filter(route=route_id)
-      print(queryset)
     return queryset
 
 class AndinistView(RetrieveAPIView):
@@ -251,5 +248,4 @@ class AndinistAscentsView(ListAPIView):
     andinist_id = self.kwargs['pk']
     if andinist_id is not None:
       queryset = queryset.filter(andinists=andinist_id)
-      print(queryset)
     return queryset
