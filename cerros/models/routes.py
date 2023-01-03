@@ -133,6 +133,9 @@ class Route(Referenceable):
   kml = models.FileField(upload_to='kml', null=True, blank=True)
   first_ascent = models.ForeignKey('Ascent', on_delete=models.SET_NULL, null=True, blank=True, related_name='first_ascent')
 
+  main_image = models.ForeignKey('Image', on_delete=models.SET_NULL, null=True, blank=True, related_name='route_main_image')
+  image_set = models.ManyToManyField('Image', blank=True)
+
   class Meta:
     verbose_name = "Ruta"
     verbose_name_plural = "Rutas"

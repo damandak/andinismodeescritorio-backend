@@ -51,6 +51,9 @@ class Mountain(Referenceable):
   unregistered_sport_ascent = models.BooleanField(default=False)
   unregistered_non_sport_ascent = models.BooleanField(default=False)
 
+  main_image = models.ForeignKey('Image', on_delete=models.SET_NULL, null=True, blank=True, related_name='mtn_main_image')
+  image_set = models.ManyToManyField('Image', blank=True)
+
   def __str__(self):
       return self.prefix.prefix + " " + self.name
 
@@ -79,6 +82,9 @@ class Mountain(Referenceable):
 
   def save(self, *args, **kwargs):
     self.first_absolute = self.get_first_ascent()
+    if self.main_image:
+      if self.main_image not in self.image_set.all():
+        self.image_set.add(self.main_image)
     super(Mountain, self).save(*args, **kwargs)
 
   class Meta:

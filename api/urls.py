@@ -21,7 +21,8 @@ from .views import (
   AndinistBasicView,
   AndinistTableView,
   AndinistReferencesView,
-  AndinistAscentsView
+  AndinistAscentsView,
+  ImageView
 )
 
 urlpatterns = [
@@ -51,4 +52,6 @@ urlpatterns = [
   path('andinist/table/', AndinistTableView.as_view(), name='andinist-table'),
   path('andinist/<int:pk>/references/', AndinistReferencesView.as_view(), name='andinist-references'),
   path('andinist/<int:pk>/ascents/', AndinistAscentsView.as_view(), name='andinist-ascents'),
+
+  path('image/<int:pk>/', ImageView.as_view(), name='image'),
 ]

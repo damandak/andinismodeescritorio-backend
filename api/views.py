@@ -11,7 +11,8 @@ from cerros.models import (
   Mountain,
   NomenclaturaSummit,
   Reference,
-  Route
+  Route,
+  Image
 )
 from .serializers import (
   MountainSerializer,
@@ -27,7 +28,8 @@ from .serializers import (
   AndinistTableSerializer,
   AscentSerializer,
   RouteSerializer,
-  AndinistSerializer
+  AndinistSerializer,
+  ImageSerializer
 )
 
 from .pagination import TablesPagination
@@ -249,3 +251,14 @@ class AndinistAscentsView(ListAPIView):
     if andinist_id is not None:
       queryset = queryset.filter(andinists=andinist_id)
     return queryset
+
+class ImageView(RetrieveAPIView):
+  serializer_class = ImageSerializer
+  http_method_names = ['get']
+  pagination = None
+
+  def get_queryset(self):
+    image_id = self.kwargs['pk']
+    queryset = Image.objects.filter(pk=image_id)
+    return queryset
+

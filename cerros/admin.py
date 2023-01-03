@@ -1,5 +1,20 @@
 from django.contrib import admin
-from .models import Mountain, MountainPrefix, MountainGroup, Country, Region, NomenclaturaSummit, IGMMap, CustomUser, Route, Andinist, Club, Ascent, Reference
+from .models import (
+  Mountain,
+  MountainPrefix,
+  MountainGroup,
+  Country,
+  Region,
+  NomenclaturaSummit,
+  IGMMap,
+  CustomUser,
+  Route,
+  Andinist,
+  Club,
+  Ascent,
+  Reference,
+  Image
+)
 
 # Register your models here.
 admin.site.register(Mountain)
@@ -14,6 +29,7 @@ admin.site.register(Andinist)
 admin.site.register(Club)
 admin.site.register(Ascent)
 admin.site.register(Reference)
+admin.site.register(Image)
 
 class CustomUserAdmin(admin.ModelAdmin):
   exclude = ('password',)

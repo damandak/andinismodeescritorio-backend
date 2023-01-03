@@ -25,6 +25,9 @@ class Ascent(Referenceable):
   )
   date_format = models.IntegerField(choices=DATE_FORMAT_CHOICES, default=DAYMONTHYEAR)
   
+  main_image = models.ForeignKey('Image', on_delete=models.SET_NULL, null=True, blank=True, related_name='ascent_main_image')
+  image_set = models.ManyToManyField('Image', blank=True)
+
   class Meta:
     verbose_name = "Ascenso"
     verbose_name_plural = "Ascensos"

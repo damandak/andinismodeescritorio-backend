@@ -31,6 +31,9 @@ class Andinist(Referenceable):
     ascent_count = models.IntegerField(default=0)
     new_routes_count = models.IntegerField(default=0)
     first_ascent_count = models.IntegerField(default=0)
+
+    main_image = models.ForeignKey('Image', on_delete=models.SET_NULL, null=True, blank=True, related_name='andinist_main_image')
+    image_set = models.ManyToManyField('Image', blank=True)
     
     def __str__(self):
         if self.name and self.surname:

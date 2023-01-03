@@ -1,5 +1,16 @@
 from rest_framework import serializers
-from cerros.models import MountainPrefix, Mountain, Country, Route, Ascent, Andinist, Reference, NomenclaturaSummit, IGMMap
+from cerros.models import (
+    MountainPrefix,
+    Mountain,
+    Country,
+    Route,
+    Ascent,
+    Andinist,
+    Reference,
+    NomenclaturaSummit,
+    IGMMap,
+    Image
+)
 
 class MountainSerializer(serializers.ModelSerializer):
     prefix = serializers.StringRelatedField()
@@ -31,6 +42,7 @@ class MountainSerializer(serializers.ModelSerializer):
             'first_absolute_date',
             'first_absolute_team',
             'unregistered_non_sport_ascent',
+            'main_image',
         ]
     
     def get_first_absolute_name(self, obj):
@@ -292,3 +304,9 @@ class AndinistSerializer(serializers.ModelSerializer):
         for c in obj.clubs.all():
             result += c.name + ", "
         return result[:-2]
+
+class ImageSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = Image
+        fields = ['id', 'name', 'image', 'author', 'description', 'date_captured']
+
