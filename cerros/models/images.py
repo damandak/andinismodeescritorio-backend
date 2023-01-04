@@ -2,6 +2,7 @@ from django.db import models
 from io import BytesIO
 from django.core.files.base import ContentFile
 from .base import BaseModel
+from .andinists import Andinist
 from django.utils.safestring import mark_safe
 from PIL import Image as PILImage
 
@@ -11,7 +12,7 @@ class Image(BaseModel):
   date_captured = models.DateField(null=True, blank=True)
   location = models.CharField(max_length=255, null=True, blank=True)
   description = models.TextField(null=True, blank=True)
-  author = models.ForeignKey('cerros.CustomUser', on_delete=models.CASCADE, related_name='images')
+  author = models.ForeignKey(Andinist, on_delete=models.SET_NULL, null=True, blank=True, related_name='author')
   tb_item_cover = models.ImageField(upload_to='images', null=True, blank=True)
   tb_small = models.ImageField(upload_to='images', null=True, blank=True)
 
