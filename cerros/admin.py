@@ -17,7 +17,12 @@ from .models import (
 )
 
 # Register your models here.
-admin.site.register(Mountain)
+class MountainAdmin(admin.ModelAdmin):
+  list_display = ('id', 'prefix', 'name', 'altitude')
+  search_fields = ('id', 'prefix__prefix', 'name', 'altitude')
+
+admin.site.register(Mountain, MountainAdmin)
+
 admin.site.register(MountainPrefix)
 admin.site.register(MountainGroup)
 admin.site.register(Country)
@@ -29,7 +34,13 @@ admin.site.register(Andinist)
 admin.site.register(Club)
 admin.site.register(Ascent)
 admin.site.register(Reference)
-admin.site.register(Image)
+
+class ImageAdmin(admin.ModelAdmin):
+  list_display = ('name', 'tb_image_tag', 'image', 'author', 'date_captured', 'location')
+  search_fields = ('name', 'author', 'date_captured', 'location')
+  list_filter = ('author',)
+
+admin.site.register(Image, ImageAdmin)
 
 class CustomUserAdmin(admin.ModelAdmin):
   exclude = ('password',)
