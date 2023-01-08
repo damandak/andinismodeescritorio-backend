@@ -48,6 +48,7 @@ class Andinist(Referenceable):
     class Meta:
         verbose_name = "Andinista"
         verbose_name_plural = "Andinistas"
+        ordering = ['surname', 'name']
 
     def get_ascent_count(self):
         ascents_count = apps.get_model(app_label='cerros', model_name='Ascent').objects.filter(andinists=self).count()
