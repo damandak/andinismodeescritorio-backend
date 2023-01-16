@@ -12,6 +12,7 @@ class MountainPrefix(BaseModel):
   class Meta:
     verbose_name = "Prefijo de montaña"
     verbose_name_plural = "Prefijos de montaña"
+    ordering = ['prefix']
   
   def __str__(self):
     return self.prefix
@@ -19,6 +20,7 @@ class MountainPrefix(BaseModel):
 class Mountain(Referenceable):
   prefix = models.ForeignKey(MountainPrefix, on_delete=models.CASCADE)
   name = models.CharField(max_length=255)
+  ascended = models.BooleanField(default=False)
 
   # Ubicación geográfica en WGS84
   latitude = models.DecimalField(max_digits=10, decimal_places=6, blank=True, null=True)
@@ -65,6 +67,14 @@ class Mountain(Referenceable):
       self.altitude = self.altitude_arg
     elif self.main_altitude_source == self.GPS:
       self.altitude = self.altitude_gps
+    # define if it has been ascended
+    if self.unregistered_sport_ascent or self.unregistered_non_sport_ascent:
+      self.ascended = True
+    else:
+      for ascent in self.ascent_set.all():
+        if ascent.completed:
+          self.ascended = True
+          break
     super(Mountain, self).save(*args, **kwargs)
 
   def get_first_ascent(self):

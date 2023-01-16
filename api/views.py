@@ -1,5 +1,7 @@
 from rest_framework.response import Response
 from rest_framework.decorators import api_view
+from django_filters.rest_framework import DjangoFilterBackend
+
 
 from rest_framework.generics import ListAPIView, RetrieveAPIView
 
@@ -12,7 +14,10 @@ from cerros.models import (
   NomenclaturaSummit,
   Reference,
   Route,
-  Image
+  Image,
+  Country,
+  Region,
+  MountainGroup
 )
 from .serializers import (
   MountainSerializer,
@@ -29,7 +34,11 @@ from .serializers import (
   AscentSerializer,
   RouteSerializer,
   AndinistSerializer,
-  ImageSerializer
+  ImageSerializer,
+  CountrySerializer,
+  RegionSerializer,
+  MountainPrefixSerializer,
+  MountainGroupSerializer
 )
 
 from .pagination import TablesPagination
@@ -45,6 +54,15 @@ def getData(request):
   return Response(person)
 
 class MapMountainsView(ListAPIView):
+  filter_backends = [DjangoFilterBackend]
+  filterset_fields = {
+    'prefix': ['in'],
+    'ascended': ['exact'],
+    'countries': ['exact'],
+    'regions': ['exact'],
+    'mountain_group': ['exact'],
+    'altitude': ['lte', 'gte'],
+  }
   queryset = Mountain.objects.all()
   serializer_class = MapMountainSerializer
   http_method_names = ['get']
@@ -158,7 +176,7 @@ class AscentTableView(ListAPIView):
 
 class AndinistTableView(ListAPIView):
   search_fields = ['name', 'surname', 'clubs__name', 'nationalities__name']
-  filter_backends = (filters.SearchFilter,)
+  filter_backends = (filters.SearchFilter, )
   queryset = Andinist.objects.all().exclude(ascent_count=0).order_by('name')
   serializer_class = AndinistTableSerializer
   http_method_names = ['get']
@@ -260,5 +278,41 @@ class ImageView(RetrieveAPIView):
   def get_queryset(self):
     image_id = self.kwargs['pk']
     queryset = Image.objects.filter(pk=image_id)
+    return queryset
+
+class CountriesView(ListAPIView):
+  serializer_class = CountrySerializer
+  http_method_names = ['get']
+  pagination = None
+
+  def get_queryset(self):
+    queryset = Country.objects.all()
+    return queryset
+
+class RegionsView(ListAPIView):
+  serializer_class = RegionSerializer
+  http_method_names = ['get']
+  pagination = None
+
+  def get_queryset(self):
+    queryset = Region.objects.all()
+    return queryset
+
+class MountainGroupsView(ListAPIView):
+  serializer_class = MountainGroupSerializer
+  http_method_names = ['get']
+  pagination = None
+
+  def get_queryset(self):
+    queryset = MountainGroup.objects.all()
+    return queryset
+
+class MountainPrefixesView(ListAPIView):
+  serializer_class = MountainPrefixSerializer
+  http_method_names = ['get']
+  pagination = None
+
+  def get_queryset(self):
+    queryset = MountainPrefix.objects.all()
     return queryset
 

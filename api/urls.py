@@ -22,7 +22,11 @@ from .views import (
   AndinistTableView,
   AndinistReferencesView,
   AndinistAscentsView,
-  ImageView
+  ImageView,
+  CountriesView,
+  RegionsView,
+  MountainPrefixesView,
+  MountainGroupsView,
 )
 
 urlpatterns = [
@@ -54,4 +58,10 @@ urlpatterns = [
   path('andinist/<int:pk>/ascents/', AndinistAscentsView.as_view(), name='andinist-ascents'),
 
   path('image/<int:pk>/', ImageView.as_view(), name='image'),
+
+
+  path('countries/', CountriesView.as_view(), name='countries'),
+  path('regions/', RegionsView.as_view(), name='regions'),
+  path('prefixes/', MountainPrefixesView.as_view(), name='prefixes'),
+  path('groups/', MountainGroupsView.as_view(), name='groups'),
 ]

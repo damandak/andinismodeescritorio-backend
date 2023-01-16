@@ -9,7 +9,10 @@ from cerros.models import (
     Reference,
     NomenclaturaSummit,
     IGMMap,
-    Image
+    Image,
+    Country,
+    Region,
+    MountainGroup,
 )
 
 class MountainSerializer(serializers.ModelSerializer):
@@ -63,9 +66,12 @@ class MountainSerializer(serializers.ModelSerializer):
 
 class MapMountainSerializer(serializers.ModelSerializer):
     prefix = serializers.StringRelatedField()
+    countries = serializers.SlugRelatedField(slug_field='name', many=True, read_only=True)
+    regions = serializers.SlugRelatedField(slug_field='name', many=True, read_only=True)
+    mountain_groups = serializers.SlugRelatedField(slug_field='name', many=True, read_only=True)
     class Meta:
         model = Mountain
-        fields = ['id', 'prefix', 'name', 'latitude', 'longitude', 'altitude']
+        fields = ['id', 'prefix', 'name', 'countries', 'regions', 'mountain_groups', 'latitude', 'longitude', 'altitude', 'ascended']
 
 class BasicMountainSerializer(serializers.ModelSerializer):
     prefix = serializers.StringRelatedField()
@@ -313,3 +319,24 @@ class ImageSerializer(serializers.ModelSerializer):
 
     def get_author_name(self, obj):
         return str(obj.author)
+
+class CountrySerializer(serializers.ModelSerializer):
+    class Meta:
+        model = Country
+        fields = ['id', 'name']
+
+class RegionSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = Region
+        fields = ['id', 'name']
+
+class MountainPrefixSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = MountainPrefix
+        fields = ['id', 'prefix']
+
+class MountainGroupSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = MountainGroup
+        fields = ['id', 'name']
+

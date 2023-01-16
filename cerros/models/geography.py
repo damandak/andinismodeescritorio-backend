@@ -11,6 +11,7 @@ class Country(BaseModel):
   class Meta:
     verbose_name = "País"
     verbose_name_plural = "Países"
+    ordering = ['name']
 
 class Region(BaseModel):
   name = models.CharField(max_length=255)
@@ -22,6 +23,7 @@ class Region(BaseModel):
   class Meta:
     verbose_name = "Región"
     verbose_name_plural = "Regiones"
+    ordering = ['name']
 
 class MountainGroup(Referenceable):
   name = models.CharField(max_length=255)
@@ -35,8 +37,10 @@ class MountainGroup(Referenceable):
   # Método para obtener longitud y latitud centro de masa de un grupo
 
   def __str__(self):
-      return self.name
+    # GROUP TYPE IN STRING
+    return self.GROUP_TYPE_CHOICES[self.group_type][1] + " " + self.name
   
   class Meta:
     verbose_name = "Grupo de Montañas"
     verbose_name_plural = "Grupos de Montañas"
+    ordering = ['group_type', 'name']
