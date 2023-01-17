@@ -315,7 +315,7 @@ class ImageSerializer(serializers.ModelSerializer):
     author_name = serializers.SerializerMethodField()
     class Meta:
         model = Image
-        fields = ['id', 'name', 'image', 'author', 'author_name', 'description', 'date_captured']
+        fields = ['id', 'name', 'image', 'author', 'author_name', 'tb_item_cover', 'description', 'date_captured']
 
     def get_author_name(self, obj):
         return str(obj.author)

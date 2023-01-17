@@ -60,6 +60,10 @@ class Mountain(Referenceable):
       return self.prefix.prefix + " " + self.name
 
   def save(self, *args, **kwargs):
+    self.first_absolute = self.get_first_ascent()
+    if self.main_image:
+      if self.main_image not in self.image_set.all():
+        self.image_set.add(self.main_image)
     # when changing main_altitude_source, update altitude field
     if self.main_altitude_source == self.IGM:
       self.altitude = self.altitude_igm
@@ -71,7 +75,9 @@ class Mountain(Referenceable):
     if self.unregistered_sport_ascent or self.unregistered_non_sport_ascent:
       self.ascended = True
     else:
-      for ascent in self.ascent_set.all():
+      # Get all ascents
+      ascent_list = apps.get_model(app_label='cerros', model_name='Ascent').objects.filter(route__mountain=self)
+      for ascent in ascent_list:
         if ascent.completed:
           self.ascended = True
           break
@@ -89,13 +95,6 @@ class Mountain(Referenceable):
       if ascent.is_first_ascent:
         return ascent
     return temp_ascent
-
-  def save(self, *args, **kwargs):
-    self.first_absolute = self.get_first_ascent()
-    if self.main_image:
-      if self.main_image not in self.image_set.all():
-        self.image_set.add(self.main_image)
-    super(Mountain, self).save(*args, **kwargs)
 
   class Meta:
     verbose_name = "Montaña"

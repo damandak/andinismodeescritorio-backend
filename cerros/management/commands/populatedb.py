@@ -66,6 +66,10 @@ class Command(BaseCommand):
       mountain.longitude = longitude
       mountain.altitude = altitude
       mountain.altitude_igm = altitude
+      if unregistered_non_sport_ascent == 'true':
+        mountain.unregistered_non_sport_ascent = True
+      if unregistered_sport_ascent == 'true':
+        mountain.unregistered_sport_ascent = True
       mountain.main_altitude_source = Mountain.IGM
       if ancestry:
         if ancestry < id:
