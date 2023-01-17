@@ -21,7 +21,7 @@ from cerros.views import IndexView
 
 urlpatterns = [
     path('admin/', admin.site.urls),
-    path('api/', include('api.urls')),
+    path('djangoapi/', include('api.urls')),
     path('', IndexView.as_view(), name='index'),
 ]
 urlpatterns += static(settings.MEDIA_URL, document_root=settings.MEDIA_ROOT)
