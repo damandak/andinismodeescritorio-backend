@@ -30,7 +30,12 @@ admin.site.register(Region)
 admin.site.register(NomenclaturaSummit)
 admin.site.register(IGMMap)
 admin.site.register(Route)
-admin.site.register(Andinist)
+
+class AndinistAdmin(admin.ModelAdmin):
+  list_display = ('id', 'name', 'surname')
+  search_fields = ('id', 'name', 'surname', 'clubs__name')
+admin.site.register(Andinist, AndinistAdmin)
+
 admin.site.register(Club)
 admin.site.register(Ascent)
 admin.site.register(Reference)
