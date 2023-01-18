@@ -33,6 +33,9 @@ class Ascent(Referenceable):
     verbose_name_plural = "Ascensos"
     ordering = ['date']
 
+  def __str__(self):
+    return self.date_tostring() + " - " + str(self.route.mountain) + " - " + self.route.name + " - " + self.name
+
   def date_tostring(self):
     if self.date_format == self.YEAR:
       return self.date.strftime("%Y") + "-xx-xx"
