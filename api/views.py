@@ -69,6 +69,8 @@ class MapMountainsView(ListAPIView):
   pagination_class = None
 
 class BasicMountainsView(ListAPIView):
+  search_fields = ['name', 'prefix__prefix', 'countries__name', 'regions__name', 'mountain_group__name', 'altitude']
+  filter_backends = (filters.SearchFilter,)
   queryset = Mountain.objects.prefetch_related('countries').prefetch_related('regions').prefetch_related('mountain_group').all()
   serializer_class = BasicMountainSerializer
   http_method_names = ['get']
