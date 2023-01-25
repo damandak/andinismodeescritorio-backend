@@ -23,8 +23,18 @@ class MountainAdmin(admin.ModelAdmin):
 
 admin.site.register(Mountain, MountainAdmin)
 
+class MountainInline(admin.TabularInline):
+  model = Mountain.mountain_group.through
+  extra = 0
+
 admin.site.register(MountainPrefix)
-admin.site.register(MountainGroup)
+
+class MountainGroupAdmin(admin.ModelAdmin):
+  list_display = ('id', 'name')
+  search_fields = ('id', 'name')
+  inlines = [MountainInline]
+admin.site.register(MountainGroup, MountainGroupAdmin)
+
 admin.site.register(Country)
 admin.site.register(Region)
 admin.site.register(NomenclaturaSummit)
@@ -51,6 +61,7 @@ class AscentAdmin(admin.ModelAdmin):
   @admin.display(description='Mountain')
   def mountain(self, obj):
     return obj.route.mountain
+
 admin.site.register(Ascent, AscentAdmin)
 
 admin.site.register(Reference)

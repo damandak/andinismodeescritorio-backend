@@ -141,7 +141,7 @@ class Route(Referenceable):
     verbose_name_plural = "Rutas"
 
   def __str__(self):
-    return self.name
+    return str(self.mountain) + " - " + self.name
 
   def first_ascent_year(self):
     if self.first_ascent:
