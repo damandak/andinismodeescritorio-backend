@@ -41,7 +41,7 @@ class Image(BaseModel):
             wsize = int((float(img.width) * float(hpercent)))
 
             # Ensure the resized dimensions don't go below a minimum width
-            min_width = 400  # Adjust this value as needed
+            min_width = 600  # Adjust this value as needed
             if wsize < min_width:
                 wsize = min_width
                 baseheight = int((float(img.height) * (wsize / float(img.width))))
@@ -63,7 +63,7 @@ class Image(BaseModel):
             wsize = int((float(img.width) * float(hpercent)))
 
             # Ensure the resized dimensions don't go below a minimum width
-            min_width = 100  # Adjust this value as needed
+            min_width = 150  # Adjust this value as needed
             if wsize < min_width:
                 wsize = min_width
                 baseheight = int((float(img.height) * (wsize / float(img.width))))
