@@ -6,53 +6,80 @@ from .andinists import Andinist
 from django.utils.safestring import mark_safe
 from PIL import Image as PILImage
 
+
 class Image(BaseModel):
-  name = models.CharField(max_length=255)
-  image = models.ImageField(upload_to='images')
-  date_captured = models.DateField(null=True, blank=True)
-  location = models.CharField(max_length=255, null=True, blank=True)
-  description = models.TextField(null=True, blank=True)
-  author = models.ForeignKey(Andinist, on_delete=models.SET_NULL, null=True, blank=True, related_name='author')
-  tb_item_cover = models.ImageField(upload_to='images', null=True, blank=True)
-  tb_small = models.ImageField(upload_to='images', null=True, blank=True)
+    name = models.CharField(max_length=255)
+    image = models.ImageField(upload_to="images")
+    date_captured = models.DateField(null=True, blank=True)
+    location = models.CharField(max_length=255, null=True, blank=True)
+    description = models.TextField(null=True, blank=True)
+    author = models.ForeignKey(
+        Andinist,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="author",
+    )
+    tb_item_cover = models.ImageField(upload_to="images", null=True, blank=True)
+    tb_small = models.ImageField(upload_to="images", null=True, blank=True)
 
-  def __str__(self):
-    return self.name
+    def __str__(self):
+        return self.name
 
-  def image_tag(self):
-    return mark_safe('<img src="%s" width="150" height="150" />' % self.image.url)
+    def image_tag(self):
+        return mark_safe('<img src="%s" width="150" height="150" />' % self.image.url)
 
-  def tb_image_tag(self):
-    return mark_safe('<img src="%s" width="100" height="100" />' % self.tb_small.url)
+    def tb_image_tag(self):
+        return mark_safe(
+            '<img src="%s" width="100" height="100" />' % self.tb_small.url
+        )
 
-  def generate_tb_item_cover(self, img):
-    if img and img.height > 400:
-      baseheight = 400
-      hpercent = (baseheight / float(img.height))
-      wsize = int((float(img.width) * float(hpercent)))
-      f = open(img.path, 'rb')
-      with PILImage.open(f) as image:
-        image.load()
-        image.thumbnail((wsize, baseheight), PILImage.Resampling.LANCZOS)
-        image_io = BytesIO()
-        image.save(image_io, format='JPEG', quality=80)
-        self.tb_item_cover.save('item_cover.jpg', ContentFile(image_io.getvalue()), save=False)
+    def generate_tb_item_cover(self, img):
+        if img and img.height > 400:
+            baseheight = 400
+            hpercent = baseheight / float(img.height)
+            wsize = int((float(img.width) * float(hpercent)))
 
-  def generate_tb_small(self, img):
-    if img and img.height > 100:
-      baseheight = 100
-      hpercent = (baseheight / float(img.height))
-      wsize = int((float(img.width) * float(hpercent)))
-      f = open(img.path, 'rb')
-      with PILImage.open(f) as image:
-        image.load()
-        image.thumbnail((wsize, baseheight), PILImage.Resampling.LANCZOS)
-        image_io = BytesIO()
-        image.save(image_io, format='JPEG', quality=80)
-        self.tb_small.save('small.jpg', ContentFile(image_io.getvalue()), save=False)
+            # Ensure the resized dimensions don't go below a minimum width
+            min_width = 400  # Adjust this value as needed
+            if wsize < min_width:
+                wsize = min_width
+                baseheight = int((float(img.height) * (wsize / float(img.width))))
 
-  def save(self, *args, **kwargs):
-    super(Image, self).save(*args, **kwargs)
-    self.generate_tb_item_cover(self.image)
-    self.generate_tb_small(self.image)
-    super(Image, self).save(*args, **kwargs)
+            f = open(img.path, "rb")
+            with PILImage.open(f) as image:
+                image.load()
+                image.thumbnail((wsize, baseheight), PILImage.Resampling.LANCZOS)
+                image_io = BytesIO()
+                image.save(image_io, format="JPEG", quality=80)
+                self.tb_item_cover.save(
+                    "item_cover.jpg", ContentFile(image_io.getvalue()), save=False
+                )
+
+    def generate_tb_small(self, img):
+        if img and img.height > 100:
+            baseheight = 100
+            hpercent = baseheight / float(img.height)
+            wsize = int((float(img.width) * float(hpercent)))
+
+            # Ensure the resized dimensions don't go below a minimum width
+            min_width = 100  # Adjust this value as needed
+            if wsize < min_width:
+                wsize = min_width
+                baseheight = int((float(img.height) * (wsize / float(img.width))))
+
+            f = open(img.path, "rb")
+            with PILImage.open(f) as image:
+                image.load()
+                image.thumbnail((wsize, baseheight), PILImage.Resampling.LANCZOS)
+                image_io = BytesIO()
+                image.save(image_io, format="JPEG", quality=80)
+                self.tb_small.save(
+                    "small.jpg", ContentFile(image_io.getvalue()), save=False
+                )
+
+    def save(self, *args, **kwargs):
+        super(Image, self).save(*args, **kwargs)
+        self.generate_tb_item_cover(self.image)
+        self.generate_tb_small(self.image)
+        super(Image, self).save(*args, **kwargs)
