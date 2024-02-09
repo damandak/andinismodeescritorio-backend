@@ -52,6 +52,7 @@ from rest_framework import filters
 
 from decimal import Decimal
 from unidecode import unidecode
+import time
 
 
 @api_view(["GET"])
@@ -60,46 +61,74 @@ def getData(request):
     return Response(person)
 
 
-class MapMountainsView(ListAPIView):
-    filter_backends = [DjangoFilterBackend]
-    filterset_fields = {
-        "prefix": ["in"],
-        "ascended": ["exact"],
-        "countries": ["exact"],
-        "regions": ["exact"],
-        "mountain_group": ["exact"],
-        "altitude": ["lte", "gte"],
-    }
-    queryset = (
-        Mountain.objects.prefetch_related("prefix")
-        .prefetch_related("countries")
-        .prefetch_related("regions")
-        .prefetch_related("mountain_group")
-        .all()
-    )
-    serializer_class = MapMountainSerializer
+class MountainsView(ListAPIView):
     http_method_names = ["get"]
-    pagination_class = None
 
+    def get_serializer_class(self):
+        if "nearby" in self.request.query_params:
+            return NearbyMountainSerializer
+        elif "search" in self.request.query_params:
+            return BasicMountainSerializer
+        return MapMountainSerializer  # Default to MapMountainSerializer
 
-class BasicMountainsView(ListAPIView):
-    search_fields = [
-        "name",
-        "prefix__prefix",
-        "countries__name",
-        "regions__name",
-        "mountain_group__name",
-        "altitude",
-    ]
-    filter_backends = (filters.SearchFilter,)
-    queryset = (
-        Mountain.objects.prefetch_related("countries")
-        .prefetch_related("regions")
-        .prefetch_related("mountain_group")
-        .all()
-    )
-    serializer_class = BasicMountainSerializer
-    http_method_names = ["get"]
+    def get_queryset(self):
+        if "nearby" in self.request.query_params:
+            return self.get_nearby_mountains()
+        # For map and basic views, optimize queryset with prefetch_related/select_related as needed
+        queryset = Mountain.objects.all()
+        if self.get_serializer_class() == MapMountainSerializer:
+            queryset = queryset.prefetch_related(
+                "prefix", "countries", "regions", "mountain_group"
+            )
+        return queryset
+
+    def get_nearby_mountains(self):
+        mountain_id = self.request.query_params.get("nearby")
+        mountain = Mountain.objects.only("latitude", "longitude").get(pk=mountain_id)
+        decimal_offset = Decimal("0.04")
+        return Mountain.objects.exclude(pk=mountain_id).filter(
+            latitude__range=(
+                mountain.latitude - decimal_offset,
+                mountain.latitude + decimal_offset,
+            ),
+            longitude__range=(
+                mountain.longitude - decimal_offset,
+                mountain.longitude + decimal_offset,
+            ),
+        )
+
+    def paginate_queryset(self, queryset):
+        if "no_pagination" in self.request.query_params:
+            return None
+        return super().paginate_queryset(queryset)
+
+    def list(self, request, *args, **kwargs):
+        start_time = time.time()
+        queryset = self.filter_queryset(self.get_queryset())
+
+        if "no_pagination" in self.request.query_params:
+            serializer = self.get_serializer(queryset, many=True)
+            end_time = time.time()
+            print(
+                f"API call duration without pagination: {end_time - start_time} seconds."
+            )
+            return Response(serializer.data)
+
+        page = self.paginate_queryset(queryset)
+        if page is not None:
+            serializer = self.get_serializer(page, many=True)
+            end_time = time.time()
+            print(
+                f"API call duration with pagination: {end_time - start_time} seconds."
+            )
+            return self.get_paginated_response(serializer.data)
+
+        serializer = self.get_serializer(queryset, many=True)
+        end_time = time.time()
+        print(
+            f"API call duration without pagination condition met: {end_time - start_time} seconds."
+        )
+        return Response(serializer.data)
 
 
 class MountainView(RetrieveAPIView):
@@ -126,35 +155,6 @@ class MountainRoutesView(ListAPIView):
             queryset = queryset.prefetch_related("mountain").filter(
                 mountain=mountain_id
             )
-        return queryset
-
-
-class MountainNearbyView(ListAPIView):
-    serializer_class = NearbyMountainSerializer
-    http_method_names = ["get"]
-    pagination = None
-
-    def get_queryset(self):
-        mountain_id = self.kwargs["pk"]
-        mountain = Mountain.objects.values("latitude", "longitude").get(pk=mountain_id)
-        decimal_offset = Decimal("0.04")
-
-        # Combine filters into a single call and optimize line length for readability
-        queryset = (
-            Mountain.objects.prefetch_related("prefix")
-            .exclude(pk=mountain_id)
-            .filter(
-                latitude__range=(
-                    mountain["latitude"] - decimal_offset,
-                    mountain["latitude"] + decimal_offset,
-                ),
-                longitude__range=(
-                    mountain["longitude"] - decimal_offset,
-                    mountain["longitude"] + decimal_offset,
-                ),
-            )
-        )
-
         return queryset
 
 
@@ -280,19 +280,6 @@ class AscentTableView(ListAPIView):
         .order_by("-date")
     )
     serializer_class = AscentTableSerializer
-    http_method_names = ["get"]
-    pagination_class = TablesPagination
-
-
-class MountainTableView(ListAPIView):
-    search_fields = [
-        "name",
-        "prefix__prefix",
-    ]
-    ordering_fields = ["name", "altitude", "ascended"]
-    filter_backends = (filters.SearchFilter, CustomOrderingFilter)
-    queryset = Mountain.objects.all().order_by("name")
-    serializer_class = MountainTableSerializer
     http_method_names = ["get"]
     pagination_class = TablesPagination
 

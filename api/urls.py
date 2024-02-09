@@ -1,14 +1,10 @@
 from django.urls import path
 from .views import (
-    BasicMountainsView,
-    MapMountainsView,
     MountainView,
     MountainRoutesView,
-    MountainNearbyView,
     MountainAscentsView,
     MountainReferencesView,
     MountainNomenclaturaView,
-    # MountainTableView,
     RouteView,
     RouteNameView,
     RouteTableView,
@@ -27,22 +23,16 @@ from .views import (
     RegionsView,
     MountainPrefixesView,
     MountainGroupsView,
-    MountainTableView,
+    MountainsView,
 )
 
 urlpatterns = [
-    path("", BasicMountainsView.as_view()),
-    path("map/", MapMountainsView.as_view()),
+    path("mountains/", MountainsView.as_view(), name="mountains"),
     path("mountain/<int:pk>/", MountainView.as_view(), name="mountain"),
     path(
         "mountain/<int:pk>/routes/",
         MountainRoutesView.as_view(),
         name="mountain-routes",
-    ),
-    path(
-        "mountain/<int:pk>/nearby_mountains/",
-        MountainNearbyView.as_view(),
-        name="mountain-nearby",
     ),
     path(
         "mountain/<int:pk>/ascents/",
@@ -59,7 +49,6 @@ urlpatterns = [
         MountainNomenclaturaView.as_view(),
         name="mountain-nomenclatura",
     ),
-    path("mountain/table/", MountainTableView.as_view(), name="mountain-table"),
     path("route/<int:pk>/", RouteView.as_view(), name="route"),
     path("route/<int:pk>/name/", RouteNameView.as_view(), name="route-name"),
     path("route/table/", RouteTableView.as_view(), name="route-table"),
