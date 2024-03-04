@@ -53,18 +53,18 @@ class MountainSerializer(serializers.ModelSerializer):
     def get_first_absolute_name(self, obj):
         if obj.first_absolute:
             return obj.first_absolute.name
-        return None
+        return ""
 
     def get_first_absolute_date(self, obj):
         if obj.first_absolute:
             return obj.first_absolute.date_tostring()
-        return None
+        return ""
 
     def get_first_absolute_team(self, obj):
         if obj.first_absolute:
             return [(a.id, str(a)) for a in obj.first_absolute.andinists.all()]
         else:
-            return None
+            return ""
 
 
 class MapMountainSerializer(serializers.ModelSerializer):

@@ -1,7 +1,7 @@
 from rest_framework.response import Response
 from rest_framework.decorators import api_view
 from django_filters.rest_framework import DjangoFilterBackend
-from django.db.models import F
+from django.db.models import F, Q
 from django.db.models.functions import ExtractYear
 
 
@@ -63,6 +63,22 @@ def getData(request):
 
 class MountainsView(ListAPIView):
     http_method_names = ["get"]
+    search_fields = [
+        "name",
+        "prefix__prefix",
+        "countries__name",
+        "regions__name",
+        "mountain_group__name",
+        "altitude",
+    ]
+    filter_backends = (filters.SearchFilter,)
+    queryset = (
+        Mountain.objects.prefetch_related("countries")
+        .prefetch_related("regions")
+        .prefetch_related("mountain_group")
+        .all()
+    )
+    pagination_class = TablesPagination
 
     def get_serializer_class(self):
         if "nearby" in self.request.query_params:
@@ -74,12 +90,21 @@ class MountainsView(ListAPIView):
     def get_queryset(self):
         if "nearby" in self.request.query_params:
             return self.get_nearby_mountains()
-        # For map and basic views, optimize queryset with prefetch_related/select_related as needed
-        queryset = Mountain.objects.all()
-        if self.get_serializer_class() == MapMountainSerializer:
-            queryset = queryset.prefetch_related(
-                "prefix", "countries", "regions", "mountain_group"
+        if "search" in self.request.query_params:
+            search = unidecode(self.request.query_params.get("search"))
+            # prefetch prefixes, and then filter names + prefixes' prefix that contain search term
+            queryset = Mountain.objects.filter(
+                Q(name__icontains=search) | Q(prefix__prefix__icontains=search)
             )
+        else:
+            queryset = Mountain.objects.all()
+            if self.get_serializer_class() == MapMountainSerializer:
+                queryset = queryset.prefetch_related(
+                    "prefix", "countries", "regions", "mountain_group"
+                )
+        if "ordering" in self.request.query_params:
+            ordering = self.request.query_params.get("ordering")
+            queryset = queryset.order_by(ordering)
         return queryset
 
     def get_nearby_mountains(self):
