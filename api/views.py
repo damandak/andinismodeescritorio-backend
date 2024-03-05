@@ -444,7 +444,14 @@ class CountriesView(ListAPIView):
     pagination = None
 
     def get_queryset(self):
-        queryset = Country.objects.all()
+        if "only_andes" in self.request.query_params:
+            country_ids = (
+                Mountain.objects.all().values_list("countries", flat=True).distinct()
+            )
+            print(country_ids)
+            queryset = Country.objects.filter(pk__in=country_ids)
+        else:
+            queryset = Country.objects.all()
         return queryset
 
 
