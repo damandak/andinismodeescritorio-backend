@@ -164,6 +164,8 @@ class AscentsSerializer(serializers.ModelSerializer):
             "support_andinists",
             "date",
             "date_format",
+            "is_first_ascent",
+            "new_route",
         ]
 
 
