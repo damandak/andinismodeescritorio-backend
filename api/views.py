@@ -184,21 +184,20 @@ class MountainRoutesView(ListAPIView):
 
 
 class MountainAscentsView(ListAPIView):
-    serializer_class = AscentsSerializer
+    serializer_class = AscentTableSerializer
     http_method_names = ["get"]
     pagination = None
 
     def get_queryset(self):
-        queryset = Ascent.objects.all()
         mountain_id = self.kwargs["pk"]
-        if mountain_id is not None:
-            queryset = (
-                queryset.prefetch_related("route")
-                .prefetch_related("route__mountain")
-                .prefetch_related("andinists")
-                .filter(route__mountain=mountain_id)
-            )  # Filter the queryset by the mountain parameter
-        return queryset
+
+        return (
+            Ascent.objects
+            .select_related("route", "route__mountain", "route__mountain__prefix")
+            .prefetch_related("andinists")
+            .filter(route__mountain=mountain_id)
+            .order_by("-date")
+        )
 
 
 class AndinistBasicView(RetrieveAPIView):
@@ -377,20 +376,22 @@ class RouteReferencesView(ListAPIView):
         queryset = route.references.all()
         return queryset
 
-
 class RouteAscentsView(ListAPIView):
-    serializer_class = AscentsSerializer
+    serializer_class = AscentTableSerializer
     http_method_names = ["get"]
     pagination = None
 
     def get_queryset(self):
-        queryset = Ascent.objects.all()
         route_id = self.kwargs["pk"]
-        if route_id is not None:
-            queryset = queryset.filter(route=route_id)
-        return queryset
 
-
+        return (
+            Ascent.objects
+            .select_related("route", "route__mountain", "route__mountain__prefix")
+            .prefetch_related("andinists")
+            .filter(route=route_id)
+            .order_by("-date")
+        )
+    
 class AndinistView(RetrieveAPIView):
     serializer_class = AndinistSerializer
     http_method_names = ["get"]
@@ -413,19 +414,21 @@ class AndinistReferencesView(ListAPIView):
         queryset = andinist.references.all()
         return queryset
 
-
 class AndinistAscentsView(ListAPIView):
-    serializer_class = AscentSerializer
+    serializer_class = AscentTableSerializer
     http_method_names = ["get"]
     pagination = None
 
     def get_queryset(self):
-        queryset = Ascent.objects.all()
         andinist_id = self.kwargs["pk"]
-        if andinist_id is not None:
-            queryset = queryset.filter(andinists=andinist_id)
-        return queryset
 
+        return (
+            Ascent.objects
+            .select_related("route", "route__mountain", "route__mountain__prefix")
+            .prefetch_related("andinists")
+            .filter(andinists=andinist_id)
+            .order_by("-date")
+        )
 
 class ImageView(RetrieveAPIView):
     serializer_class = ImageSerializer

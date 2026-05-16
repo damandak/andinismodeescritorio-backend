@@ -290,7 +290,9 @@ class AscentTableSerializer(serializers.ModelSerializer):
     mountain = serializers.SerializerMethodField()
     mountain_name = serializers.SerializerMethodField()
     andinists = serializers.SerializerMethodField()
-    date = serializers.SerializerMethodField()
+    andinist_list = serializers.SerializerMethodField()
+    resulting_date = serializers.SerializerMethodField()
+    honours = serializers.SerializerMethodField()
 
     class Meta:
         model = Ascent
@@ -302,8 +304,14 @@ class AscentTableSerializer(serializers.ModelSerializer):
             "mountain",
             "mountain_name",
             "andinists",
+            "andinist_list",
             "completed",
             "date",
+            "date_format",
+            "resulting_date",
+            "is_first_ascent",
+            "new_route",
+            "honours",
         ]
 
     def get_route_name(self, obj):
@@ -316,12 +324,26 @@ class AscentTableSerializer(serializers.ModelSerializer):
         return obj.route.mountain.prefix.prefix + " " + obj.route.mountain.name
 
     def get_andinists(self, obj):
-        # return tuples with andinist id and fullname
-        return [(a.id, str(a)) for a in obj.andinists.all()]
+        return [a.id for a in obj.andinists.all()]
 
-    def get_date(self, obj):
+    def get_andinist_list(self, obj):
+        return [
+            {
+                "id": a.id,
+                "fullname": str(a),
+            }
+            for a in obj.andinists.all()
+        ]
+
+    def get_resulting_date(self, obj):
         return obj.date_tostring()
 
+    def get_honours(self, obj):
+        if obj.is_first_ascent:
+            return "Primera ascensión"
+        if obj.new_route:
+            return "Nueva ruta"
+        return ""
 
 class AndinistTableSerializer(serializers.ModelSerializer):
     fullname = serializers.SerializerMethodField()
