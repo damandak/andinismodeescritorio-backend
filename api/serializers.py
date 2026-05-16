@@ -324,7 +324,7 @@ class AscentTableSerializer(serializers.ModelSerializer):
         return obj.route.mountain.prefix.prefix + " " + obj.route.mountain.name
 
     def get_andinists(self, obj):
-        return [a.id for a in obj.andinists.all()]
+        return [(a.id, str(a)) for a in obj.andinists.all()]
 
     def get_andinist_list(self, obj):
         return [
@@ -334,7 +334,7 @@ class AscentTableSerializer(serializers.ModelSerializer):
             }
             for a in obj.andinists.all()
         ]
-
+    
     def get_resulting_date(self, obj):
         return obj.date_tostring()
 
