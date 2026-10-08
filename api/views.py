@@ -260,6 +260,7 @@ class RouteTableView(ListAPIView):
     ordering_fields = [
         "name",
         "mountain_name",
+        "difficulty",
         "first_ascent_year",
     ]
     filter_backends = (filters.SearchFilter, CustomOrderingFilter)

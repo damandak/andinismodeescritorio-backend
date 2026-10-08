@@ -245,16 +245,18 @@ class RouteTableSerializer(serializers.ModelSerializer):
         return obj.mountain.prefix.prefix + " " + obj.mountain.name
 
     def get_difficulty(self, obj):
-        difficulty = ""
-        if obj.alpine_grade:
-            difficulty += obj.alpine_grade.name
-        if obj.aid_climbing_grade:
-            difficulty += " " + obj.aid_climbing_grade.name
-        if obj.ice_climbing_grade:
-            difficulty += " " + obj.ice_climbing_grade.name
-        if obj.rock_climbing_grade:
-            difficulty += " " + obj.rock_climbing_grade.name
-        return difficulty
+        # Grades are stored as integers; 0 is a valid grade (F, A0, WI1, 3A),
+        # so compare against None instead of relying on truthiness.
+        grades = []
+        if obj.alpine_grade is not None:
+            grades.append(obj.get_alpine_grade_display())
+        if obj.aid_climbing_grade is not None:
+            grades.append(obj.get_aid_climbing_grade_display())
+        if obj.ice_climbing_grade is not None:
+            grades.append(obj.get_ice_climbing_grade_display())
+        if obj.rock_climbing_grade is not None:
+            grades.append(obj.get_rock_climbing_grade_display())
+        return " ".join(grades)
 
     def get_first_ascent_year(self, obj):
         return obj.first_ascent_year

@@ -12,6 +12,10 @@ class CustomOrderingFilter(OrderingFilter):
                     custom_ordering.extend(["name", "surname"])
                 elif field == "-fullname":
                     custom_ordering.extend(["-name", "-surname"])
+                elif field == "difficulty":
+                    custom_ordering.append("alpine_grade")
+                elif field == "-difficulty":
+                    custom_ordering.append("-alpine_grade")
                 else:
                     custom_ordering.append(field)
             return queryset.order_by(*custom_ordering)
