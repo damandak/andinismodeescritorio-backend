@@ -1,7 +1,7 @@
 from rest_framework.response import Response
 from rest_framework.decorators import api_view
 from django_filters.rest_framework import DjangoFilterBackend
-from django.db.models import F, Q
+from django.db.models import F
 from django.db.models.functions import ExtractYear
 
 
@@ -47,11 +47,10 @@ from .serializers import (
 
 from .pagination import TablesPagination
 from .custom_filters import CustomOrderingFilter
+from .search import AccentInsensitiveSearchFilter
 
-from rest_framework import filters
 
 from decimal import Decimal
-from unidecode import unidecode
 import time
 
 
@@ -71,7 +70,7 @@ class MountainsView(ListAPIView):
         "mountain_group__name",
         "altitude",
     ]
-    filter_backends = (filters.SearchFilter,)
+    filter_backends = (AccentInsensitiveSearchFilter,)
     queryset = (
         Mountain.objects.prefetch_related("countries")
         .prefetch_related("regions")
@@ -90,18 +89,10 @@ class MountainsView(ListAPIView):
     def get_queryset(self):
         if "nearby" in self.request.query_params:
             return self.get_nearby_mountains()
-        if "search" in self.request.query_params:
-            search = unidecode(self.request.query_params.get("search"))
-            # prefetch prefixes, and then filter names + prefixes' prefix that contain search term
-            queryset = Mountain.objects.filter(
-                Q(name__icontains=search) | Q(prefix__prefix__icontains=search)
-            )
-        else:
-            queryset = Mountain.objects.all()
-            if self.get_serializer_class() == MapMountainSerializer:
-                queryset = queryset.prefetch_related(
-                    "prefix", "countries", "regions", "mountain_group"
-                )
+        # The search itself is done by AccentInsensitiveSearchFilter.
+        queryset = Mountain.objects.select_related("prefix").prefetch_related(
+            "countries", "regions", "mountain_group"
+        )
         if "ordering" in self.request.query_params:
             ordering = self.request.query_params.get("ordering")
             queryset = queryset.order_by(ordering)
@@ -263,7 +254,7 @@ class RouteTableView(ListAPIView):
         "difficulty",
         "first_ascent_year",
     ]
-    filter_backends = (filters.SearchFilter, CustomOrderingFilter)
+    filter_backends = (AccentInsensitiveSearchFilter, CustomOrderingFilter)
     queryset = (
         Route.objects.annotate(
             mountain_name=F("mountain__name"),
@@ -294,7 +285,7 @@ class AscentTableView(ListAPIView):
     ]
     ordering_fields = ["name", "date", "mountain_name", "route_name"]
     filter_backends = (
-        filters.SearchFilter,
+        AccentInsensitiveSearchFilter,
         CustomOrderingFilter,
     )
     queryset = (
@@ -318,7 +309,7 @@ class AndinistTableView(ListAPIView):
         "first_ascent_count",
     ]
     filter_backends = (
-        filters.SearchFilter,
+        AccentInsensitiveSearchFilter,
         CustomOrderingFilter,
     )
     queryset = (
