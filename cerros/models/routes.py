@@ -2,7 +2,6 @@ from django.db import models
 from .base import BaseModel
 from .mountains import Mountain
 from .references import Referenceable
-from django.apps import apps
 
 
 class Route(Referenceable):
@@ -149,17 +148,8 @@ class Route(Referenceable):
     return ""
 
   def get_first_ascent(self):
-    if self.unregistered_sport_ascent:
-      return None
-    ascents = apps.get_model(app_label='cerros', model_name='Ascent').objects.filter(route=self).order_by('-date')
-    if not ascents:
-      return None
-    temp_ascent = ascents.first()
-    for ascent in ascents:
-      temp_ascent = ascent
-      if ascent.new_route:
-        return ascent
-    return temp_ascent
+    from cerros.derived import compute_route_first_ascent
+    return compute_route_first_ascent(self)
 
   def save(self, *args, **kwargs):
     self.first_ascent = self.get_first_ascent()

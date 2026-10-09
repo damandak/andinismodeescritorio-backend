@@ -4,7 +4,6 @@ from .base import BaseModel
 from .nomenclatura import NomenclaturaSummit
 from .geography import Country, Region, MountainGroup
 from .references import Referenceable
-from django.apps import apps
 
 class MountainPrefix(BaseModel):
   prefix = models.CharField(max_length=15, unique=True, blank=True, null=True)
@@ -60,41 +59,26 @@ class Mountain(Referenceable):
       return self.prefix.prefix + " " + self.name
 
   def save(self, *args, **kwargs):
+    from cerros.derived import compute_mountain_ascended
     self.first_absolute = self.get_first_ascent()
-    if self.main_image:
-      if self.main_image not in self.image_set.all():
-        self.image_set.add(self.main_image)
     # when changing main_altitude_source, update altitude field
-    if self.main_altitude_source == self.IGM:
-      self.altitude = self.altitude_igm
-    elif self.main_altitude_source == self.ARG:
-      self.altitude = self.altitude_arg
-    elif self.main_altitude_source == self.GPS:
-      self.altitude = self.altitude_gps
-    # define if it has been ascended
-    if self.unregistered_sport_ascent or self.unregistered_non_sport_ascent:
-      self.ascended = True
-    else:
-      # Get all ascents
-      ascent_list = apps.get_model(app_label='cerros', model_name='Ascent').objects.filter(route__mountain=self)
-      for ascent in ascent_list:
-        if ascent.completed:
-          self.ascended = True
-          break
+    # (only if that source has a value, so a missing source never wipes it)
+    source_altitude = {
+      self.IGM: self.altitude_igm,
+      self.ARG: self.altitude_arg,
+      self.GPS: self.altitude_gps,
+    }.get(self.main_altitude_source)
+    if source_altitude is not None:
+      self.altitude = source_altitude
+    self.ascended = compute_mountain_ascended(self)
     super(Mountain, self).save(*args, **kwargs)
+    # image_set is many-to-many: it needs a saved mountain (pk) first
+    if self.main_image_id and not self.image_set.filter(pk=self.main_image_id).exists():
+      self.image_set.add(self.main_image_id)
 
   def get_first_ascent(self):
-    if self.unregistered_sport_ascent:
-      return None
-    ascents = apps.get_model(app_label='cerros', model_name='Ascent').objects.filter(route__mountain=self).order_by('-date')
-    if not ascents:
-      return None
-    temp_ascent = ascents.first()
-    for ascent in ascents:
-      temp_ascent = ascent
-      if ascent.is_first_ascent:
-        return ascent
-    return temp_ascent
+    from cerros.derived import compute_mountain_first_ascent
+    return compute_mountain_first_ascent(self)
 
   class Meta:
     verbose_name = "Montaña"

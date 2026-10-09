@@ -2,7 +2,6 @@ from django.db import models
 from .base import BaseModel
 from .geography import Country
 from .references import Referenceable
-from django.apps import apps
 
 class Club(Referenceable):
     name = models.CharField(max_length=255)
@@ -50,28 +49,8 @@ class Andinist(Referenceable):
         verbose_name_plural = "Andinistas"
         ordering = ['surname', 'name']
 
-    def get_ascent_count(self):
-        ascents_count = apps.get_model(app_label='cerros', model_name='Ascent').objects.filter(andinists=self).count()
-        return ascents_count
-
-    def get_new_routes_count(self):
-        new_routes = apps.get_model(app_label='cerros', model_name='Ascent').objects.filter(andinists=self)
-        new_routes_count = 0
-        for new_route in new_routes:
-            if new_route.new_route:
-                new_routes_count += 1
-        return new_routes_count
-
-    def get_first_ascent_count(self):
-        first_ascents = apps.get_model(app_label='cerros', model_name='Ascent').objects.filter(andinists=self)
-        first_ascent_count = 0
-        for first_ascent in first_ascents:
-            if first_ascent.is_first_ascent:
-                first_ascent_count += 1
-        return first_ascent_count
-
     def save(self, *args, **kwargs):
-        self.ascent_count = self.get_ascent_count()
-        self.new_routes_count = self.get_new_routes_count()
-        self.first_ascent_count = self.get_first_ascent_count()
+        from cerros.derived import compute_andinist_counts
+        for field, value in compute_andinist_counts(self).items():
+            setattr(self, field, value)
         super(Andinist, self).save(*args, **kwargs)
