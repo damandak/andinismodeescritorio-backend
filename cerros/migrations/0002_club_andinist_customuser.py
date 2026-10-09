@@ -12,6 +12,14 @@ class Migration(migrations.Migration):
         ('cerros', '0001_initial'),
     ]
 
+    # CustomUser (AUTH_USER_MODEL) is created here, not in 0001, so the admin
+    # app's first migration must wait for it. Without this, migrating a new
+    # empty database fails with "Related model 'cerros.customuser' cannot be
+    # resolved". It changes nothing on databases where both are applied.
+    run_before = [
+        ('admin', '0001_initial'),
+    ]
+
     operations = [
         migrations.CreateModel(
             name='Club',
