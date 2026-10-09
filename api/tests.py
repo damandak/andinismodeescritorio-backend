@@ -74,3 +74,53 @@ class NomenclaturaTests(TestCase):
         for pk in (self.unlinked.pk, 999999):
             response = self.client.get(f"/djangoapi/mountain/{pk}/nomenclatura/")
             self.assertEqual(response.status_code, 404)
+
+
+class ApiRobustnessTests(TestCase):
+    """Lists are complete, bad parameters don't produce 500s."""
+
+    @classmethod
+    def setUpTestData(cls):
+        prefix = MountainPrefix.objects.create(prefix="Cerro")
+        cls.mountain = Mountain.objects.create(prefix=prefix, name="Grande", altitude_igm=5000)
+        Mountain.objects.create(prefix=prefix, name="Sin altura")
+        Mountain.objects.create(prefix=prefix, name="Chico", altitude_igm=3000)
+        for i in range(12):
+            Route.objects.create(name=f"Ruta {i:02d}", mountain=cls.mountain)
+        route = Route.objects.get(name="Ruta 00")
+        first = Ascent.objects.create(
+            name="Primera ascensión", route=route, date=datetime.date(1910, 1, 20)
+        )
+        first.andinists.add(Andinist.objects.create(name="Federico", surname="Reichert"))
+
+    def test_short_lists_are_not_cut_at_ten(self):
+        data = self.client.get(f"/djangoapi/mountain/{self.mountain.pk}/routes/").json()
+        self.assertEqual(data["count"], 12)
+        self.assertEqual(len(data["results"]), 12)
+
+    def test_invalid_ordering_is_ignored(self):
+        response = self.client.get("/djangoapi/mountains/", {"ordering": "campo_inexistente"})
+        self.assertEqual(response.status_code, 200)
+        response = self.client.get("/djangoapi/mountains/", {"ordering": "image_set__author__surname"})
+        self.assertEqual(response.status_code, 200)
+
+    def test_empty_altitude_sorts_last_both_ways(self):
+        for ordering, expected in [("-altitude", ["Grande", "Chico", "Sin altura"]),
+                                   ("altitude", ["Chico", "Grande", "Sin altura"])]:
+            data = self.client.get("/djangoapi/mountains/", {"ordering": ordering}).json()
+            self.assertEqual([m["name"] for m in data["results"]], expected)
+
+    def test_missing_records_give_404(self):
+        for url in ["/djangoapi/mountain/999999/references/",
+                    "/djangoapi/route/999999/references/",
+                    "/djangoapi/ascent/999999/references/",
+                    "/djangoapi/andinist/999999/references/",
+                    "/djangoapi/mountains/?nearby=999999",
+                    "/djangoapi/mountains/?nearby=abc"]:
+            with self.subTest(url=url):
+                self.assertEqual(self.client.get(url).status_code, 404)
+
+    def test_mountain_includes_first_ascent_name(self):
+        data = self.client.get(f"/djangoapi/mountain/{self.mountain.pk}/").json()
+        self.assertEqual(data["first_absolute_name"], "Primera ascensión")
+        self.assertEqual(data["first_absolute_team"][0][1], "Federico Reichert")

@@ -18,7 +18,7 @@ from cerros.models import (
 
 class MountainSerializer(serializers.ModelSerializer):
     prefix = serializers.StringRelatedField()
-    first_absolute_name = serializers.CharField(read_only=True)
+    first_absolute_name = serializers.SerializerMethodField()
     first_absolute_date = serializers.SerializerMethodField()
     first_absolute_team = serializers.SerializerMethodField()
 
@@ -74,7 +74,7 @@ class MapMountainSerializer(serializers.ModelSerializer):
     )
     regions = serializers.SlugRelatedField(slug_field="name", many=True, read_only=True)
     mountain_groups = serializers.SlugRelatedField(
-        slug_field="name", many=True, read_only=True
+        source="mountain_group", slug_field="name", many=True, read_only=True
     )
 
     class Meta:

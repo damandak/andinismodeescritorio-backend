@@ -47,13 +47,12 @@ from .serializers import (
     MountainGroupSerializer,
 )
 
-from .pagination import TablesPagination
+from .pagination import AllResultsPagination, TablesPagination
 from .custom_filters import CustomOrderingFilter
 from .search import AccentInsensitiveSearchFilter
 
 
 from decimal import Decimal
-import time
 
 
 @api_view(["GET"])
@@ -72,7 +71,8 @@ class MountainsView(ListAPIView):
         "mountain_group__name",
         "altitude",
     ]
-    filter_backends = (AccentInsensitiveSearchFilter,)
+    filter_backends = (AccentInsensitiveSearchFilter, CustomOrderingFilter)
+    ordering_fields = ["id", "name", "altitude", "ascended"]
     queryset = (
         Mountain.objects.prefetch_related("countries")
         .prefetch_related("regions")
@@ -95,14 +95,17 @@ class MountainsView(ListAPIView):
         queryset = Mountain.objects.select_related("prefix").prefetch_related(
             "countries", "regions", "mountain_group"
         )
-        if "ordering" in self.request.query_params:
-            ordering = self.request.query_params.get("ordering")
-            queryset = queryset.order_by(ordering)
         return queryset
 
     def get_nearby_mountains(self):
         mountain_id = self.request.query_params.get("nearby")
-        mountain = Mountain.objects.only("latitude", "longitude").get(pk=mountain_id)
+        if not str(mountain_id).isdigit():
+            raise Http404
+        mountain = get_object_or_404(
+            Mountain.objects.only("latitude", "longitude"), pk=mountain_id
+        )
+        if mountain.latitude is None or mountain.longitude is None:
+            return Mountain.objects.none()
         decimal_offset = Decimal("0.04")
         return Mountain.objects.exclude(pk=mountain_id).filter(
             latitude__range=(
@@ -120,34 +123,6 @@ class MountainsView(ListAPIView):
             return None
         return super().paginate_queryset(queryset)
 
-    def list(self, request, *args, **kwargs):
-        start_time = time.time()
-        queryset = self.filter_queryset(self.get_queryset())
-
-        if "no_pagination" in self.request.query_params:
-            serializer = self.get_serializer(queryset, many=True)
-            end_time = time.time()
-            print(
-                f"API call duration without pagination: {end_time - start_time} seconds."
-            )
-            return Response(serializer.data)
-
-        page = self.paginate_queryset(queryset)
-        if page is not None:
-            serializer = self.get_serializer(page, many=True)
-            end_time = time.time()
-            print(
-                f"API call duration with pagination: {end_time - start_time} seconds."
-            )
-            return self.get_paginated_response(serializer.data)
-
-        serializer = self.get_serializer(queryset, many=True)
-        end_time = time.time()
-        print(
-            f"API call duration without pagination condition met: {end_time - start_time} seconds."
-        )
-        return Response(serializer.data)
-
 
 class MountainView(RetrieveAPIView):
     queryset = Mountain.objects.all()
@@ -164,7 +139,7 @@ class MountainView(RetrieveAPIView):
 class MountainRoutesView(ListAPIView):
     serializer_class = RouteNameSerializer
     http_method_names = ["get"]
-    pagination = None
+    pagination_class = AllResultsPagination
 
     def get_queryset(self):
         queryset = Route.objects.all()
@@ -179,7 +154,7 @@ class MountainRoutesView(ListAPIView):
 class MountainAscentsView(ListAPIView):
     serializer_class = AscentTableSerializer
     http_method_names = ["get"]
-    pagination = None
+    pagination_class = AllResultsPagination
 
     def get_queryset(self):
         mountain_id = self.kwargs["pk"]
@@ -196,7 +171,6 @@ class MountainAscentsView(ListAPIView):
 class AndinistBasicView(RetrieveAPIView):
     serializer_class = AndinistBasicSerializer
     http_method_names = ["get"]
-    pagination = None
 
     def get_queryset(self):
         andinist_id = self.kwargs["pk"]
@@ -207,7 +181,6 @@ class AndinistBasicView(RetrieveAPIView):
 class RouteNameView(RetrieveAPIView):
     serializer_class = RouteNameSerializer
     http_method_names = ["get"]
-    pagination = None
 
     def get_queryset(self):
         route_id = self.kwargs["pk"]
@@ -218,11 +191,11 @@ class RouteNameView(RetrieveAPIView):
 class MountainReferencesView(ListAPIView):
     serializer_class = ReferencesSerializer
     http_method_names = ["get"]
-    pagination = None
+    pagination_class = AllResultsPagination
 
     def get_queryset(self):
         mountain_id = self.kwargs["pk"]
-        mountain = Mountain.objects.get(pk=mountain_id)
+        mountain = get_object_or_404(Mountain, pk=mountain_id)
         queryset = mountain.references.all()
         return queryset
 
@@ -338,7 +311,6 @@ class AndinistTableView(ListAPIView):
 class AscentView(RetrieveAPIView):
     serializer_class = AscentSerializer
     http_method_names = ["get"]
-    pagination = None
 
     def get_queryset(self):
         ascent_id = self.kwargs["pk"]
@@ -349,11 +321,11 @@ class AscentView(RetrieveAPIView):
 class AscentReferencesView(ListAPIView):
     serializer_class = ReferencesSerializer
     http_method_names = ["get"]
-    pagination = None
+    pagination_class = AllResultsPagination
 
     def get_queryset(self):
         ascent_id = self.kwargs["pk"]
-        ascent = Ascent.objects.get(pk=ascent_id)
+        ascent = get_object_or_404(Ascent, pk=ascent_id)
         queryset = ascent.references.all()
         return queryset
 
@@ -361,7 +333,6 @@ class AscentReferencesView(ListAPIView):
 class RouteView(RetrieveAPIView):
     serializer_class = RouteSerializer
     http_method_names = ["get"]
-    pagination = None
 
     def get_queryset(self):
         route_id = self.kwargs["pk"]
@@ -372,18 +343,18 @@ class RouteView(RetrieveAPIView):
 class RouteReferencesView(ListAPIView):
     serializer_class = ReferencesSerializer
     http_method_names = ["get"]
-    pagination = None
+    pagination_class = AllResultsPagination
 
     def get_queryset(self):
         route_id = self.kwargs["pk"]
-        route = Route.objects.get(pk=route_id)
+        route = get_object_or_404(Route, pk=route_id)
         queryset = route.references.all()
         return queryset
 
 class RouteAscentsView(ListAPIView):
     serializer_class = AscentTableSerializer
     http_method_names = ["get"]
-    pagination = None
+    pagination_class = AllResultsPagination
 
     def get_queryset(self):
         route_id = self.kwargs["pk"]
@@ -399,7 +370,6 @@ class RouteAscentsView(ListAPIView):
 class AndinistView(RetrieveAPIView):
     serializer_class = AndinistSerializer
     http_method_names = ["get"]
-    pagination = None
 
     def get_queryset(self):
         andinist_id = self.kwargs["pk"]
@@ -410,18 +380,18 @@ class AndinistView(RetrieveAPIView):
 class AndinistReferencesView(ListAPIView):
     serializer_class = ReferencesSerializer
     http_method_names = ["get"]
-    pagination = None
+    pagination_class = AllResultsPagination
 
     def get_queryset(self):
         andinist_id = self.kwargs["pk"]
-        andinist = Andinist.objects.get(pk=andinist_id)
+        andinist = get_object_or_404(Andinist, pk=andinist_id)
         queryset = andinist.references.all()
         return queryset
 
 class AndinistAscentsView(ListAPIView):
     serializer_class = AscentTableSerializer
     http_method_names = ["get"]
-    pagination = None
+    pagination_class = AllResultsPagination
 
     def get_queryset(self):
         andinist_id = self.kwargs["pk"]
@@ -437,7 +407,6 @@ class AndinistAscentsView(ListAPIView):
 class ImageView(RetrieveAPIView):
     serializer_class = ImageSerializer
     http_method_names = ["get"]
-    pagination = None
 
     def get_queryset(self):
         image_id = self.kwargs["pk"]
@@ -448,14 +417,13 @@ class ImageView(RetrieveAPIView):
 class CountriesView(ListAPIView):
     serializer_class = CountrySerializer
     http_method_names = ["get"]
-    pagination = None
+    pagination_class = AllResultsPagination
 
     def get_queryset(self):
         if "only_andes" in self.request.query_params:
             country_ids = (
                 Mountain.objects.all().values_list("countries", flat=True).distinct()
             )
-            print(country_ids)
             queryset = Country.objects.filter(pk__in=country_ids)
         else:
             queryset = Country.objects.all()
@@ -465,7 +433,7 @@ class CountriesView(ListAPIView):
 class RegionsView(ListAPIView):
     serializer_class = RegionSerializer
     http_method_names = ["get"]
-    pagination = None
+    pagination_class = AllResultsPagination
 
     def get_queryset(self):
         queryset = Region.objects.all()
@@ -475,7 +443,7 @@ class RegionsView(ListAPIView):
 class MountainGroupsView(ListAPIView):
     serializer_class = MountainGroupSerializer
     http_method_names = ["get"]
-    pagination = None
+    pagination_class = AllResultsPagination
 
     def get_queryset(self):
         queryset = MountainGroup.objects.all()
@@ -485,7 +453,7 @@ class MountainGroupsView(ListAPIView):
 class MountainPrefixesView(ListAPIView):
     serializer_class = MountainPrefixSerializer
     http_method_names = ["get"]
-    pagination = None
+    pagination_class = AllResultsPagination
 
     def get_queryset(self):
         queryset = MountainPrefix.objects.all()
