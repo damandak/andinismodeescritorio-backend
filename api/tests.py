@@ -41,3 +41,36 @@ class SearchTests(TestCase):
         self.assertEqual(self.names("/djangoapi/route/table/", "plomo glaciar"), ["Glaciar Iver"])
         self.assertEqual(self.names("/djangoapi/ascent/table/", "hector 1945"), ["Primera"])
         self.assertEqual(self.names("/djangoapi/andinist/table/", "HECTOR"), ["Héctor Palominos"])
+
+
+class NomenclaturaTests(TestCase):
+    """/mountain/<id>/nomenclatura/ returns the summit linked to that mountain."""
+
+    @classmethod
+    def setUpTestData(cls):
+        from cerros.models import IGMMap, NomenclaturaSummit
+
+        igm = IGMMap.objects.create(name="Juncal", file_id="x")
+        cls.decoy = NomenclaturaSummit.objects.create(
+            pk=5000, id_nomenclatura="A", cod_revision="1", name="Otro cerro", igm_rectangle=igm
+        )
+        cls.summit = NomenclaturaSummit.objects.create(
+            id_nomenclatura="B", cod_revision="1", name="Cerro Correcto", igm_rectangle=igm
+        )
+        prefix = MountainPrefix.objects.create(prefix="Cerro")
+        # Same id as the decoy summit, linked to the other one.
+        cls.linked = Mountain.objects.create(
+            pk=cls.decoy.pk, prefix=prefix, name="Correcto", nomenclatura_mountain=cls.summit
+        )
+        cls.unlinked = Mountain.objects.create(prefix=prefix, name="Sin vínculo")
+
+    def test_returns_the_linked_summit(self):
+        response = self.client.get(f"/djangoapi/mountain/{self.linked.pk}/nomenclatura/")
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.json()["name"], "Cerro Correcto")
+        self.assertEqual(response.json()["igm_rectangle_name"], "Juncal")
+
+    def test_404_when_not_linked_or_missing(self):
+        for pk in (self.unlinked.pk, 999999):
+            response = self.client.get(f"/djangoapi/mountain/{pk}/nomenclatura/")
+            self.assertEqual(response.status_code, 404)

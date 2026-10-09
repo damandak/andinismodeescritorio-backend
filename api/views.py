@@ -5,6 +5,8 @@ from django.db.models import F
 from django.db.models.functions import ExtractYear
 
 
+from django.http import Http404
+from django.shortcuts import get_object_or_404
 from rest_framework.generics import ListAPIView, RetrieveAPIView
 
 from cerros.models import (
@@ -226,16 +228,26 @@ class MountainReferencesView(ListAPIView):
 
 
 class MountainNomenclaturaView(RetrieveAPIView):
+    """The Proyecto Nomenclatura summit linked to mountain <pk>.
+
+    The URL carries the mountain id. This used to look up the Nomenclatura
+    summit with that same id, which only matched for mountains imported with
+    equal ids and showed another summit's data otherwise.
+    """
+
     serializer_class = NomenclaturaSummitSerializer
     http_method_names = ["get"]
-    pagination = None
 
-    def get_queryset(self):
-        summit_id = self.kwargs["pk"]
-        queryset = NomenclaturaSummit.objects.prefetch_related("igm_rectangle").filter(
-            pk=summit_id
+    def get_object(self):
+        mountain = get_object_or_404(
+            Mountain.objects.select_related(
+                "nomenclatura_mountain__igm_rectangle"
+            ),
+            pk=self.kwargs["pk"],
         )
-        return queryset
+        if mountain.nomenclatura_mountain is None:
+            raise Http404("Este cerro no está vinculado a Proyecto Nomenclatura.")
+        return mountain.nomenclatura_mountain
 
 
 class RouteTableView(ListAPIView):
