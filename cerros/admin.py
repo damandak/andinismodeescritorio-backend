@@ -166,7 +166,7 @@ class ImageAdmin(admin.ModelAdmin):
         "date_captured",
         "location",
     )
-    search_fields = ("name", "author", "date_captured", "location")
+    search_fields = ("name", "author__name", "author__surname", "date_captured", "location")
     list_filter = ("author",)
 
 
