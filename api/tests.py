@@ -171,3 +171,31 @@ class MountainTableTests(TestCase):
             with self.subTest(params=params):
                 row = self.client.get("/djangoapi/mountains/", params).json()["results"][0]
                 self.assertIn("ascended", row)
+
+
+class ImagesBatchTests(TestCase):
+    def test_several_images_in_one_request(self):
+        from django.core.files.uploadedfile import SimpleUploadedFile
+        from io import BytesIO
+        from PIL import Image as PILImage
+        from django.test import override_settings
+        import tempfile
+
+        from cerros.models import Image
+
+        with tempfile.TemporaryDirectory() as media, override_settings(MEDIA_ROOT=media):
+            def photo(name):
+                buf = BytesIO()
+                PILImage.new("RGB", (40, 30), "white").save(buf, "JPEG")
+                return Image.objects.create(
+                    name=name, image=SimpleUploadedFile(f"{name}.jpg", buf.getvalue())
+                )
+
+            a, b = photo("a"), photo("b")
+            with self.assertNumQueries(1):
+                data = self.client.get("/djangoapi/images/", {"ids": f"{b.pk},{a.pk},999999,x"}).json()
+            self.assertEqual([r["id"] for r in data["results"]], [a.pk, b.pk])
+            self.assertIn("tb_item_cover", data["results"][0])
+
+            empty = self.client.get("/djangoapi/images/").json()
+            self.assertEqual(empty["results"], [])

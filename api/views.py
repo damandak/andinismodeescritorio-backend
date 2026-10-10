@@ -439,6 +439,24 @@ class ImageView(RetrieveAPIView):
         return queryset
 
 
+class ImagesView(ListAPIView):
+    """Several images in one request: /djangoapi/images/?ids=52,56,57
+
+    Used by the blog, where a post can have 20+ photos. Unknown ids are left
+    out; at most 100 ids per request.
+    """
+
+    serializer_class = ImageSerializer
+    pagination_class = AllResultsPagination
+    http_method_names = ["get"]
+    MAX_IDS = 100
+
+    def get_queryset(self):
+        raw = self.request.query_params.get("ids", "")
+        ids = [int(part) for part in raw.split(",") if part.strip().isdigit()][: self.MAX_IDS]
+        return Image.objects.filter(pk__in=ids).select_related("author").order_by("pk")
+
+
 class CountriesView(ListAPIView):
     serializer_class = CountrySerializer
     http_method_names = ["get"]
