@@ -120,6 +120,7 @@ class BasicMountainSerializer(serializers.ModelSerializer):
             "latitude",
             "longitude",
             "altitude",
+            "ascended",
             "parent_mountain",
             "countries",
             "regions",

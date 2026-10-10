@@ -159,3 +159,15 @@ class MapListTests(TestCase):
         nearby = self.client.get("/djangoapi/mountains/", {"nearby": a.pk, "no_pagination": ""}).json()
         self.assertEqual([m["name"] for m in nearby], ["B"])
         self.assertIn("ascended", nearby[0])
+
+
+class MountainTableTests(TestCase):
+    def test_search_results_include_ascended(self):
+        """The /cerros table shows "Ascendido" also while searching."""
+        prefix = MountainPrefix.objects.create(prefix="Cerro")
+        Mountain.objects.create(prefix=prefix, name="Plomo")
+
+        for params in ({}, {"search": "plomo"}):
+            with self.subTest(params=params):
+                row = self.client.get("/djangoapi/mountains/", params).json()["results"][0]
+                self.assertIn("ascended", row)
