@@ -56,9 +56,23 @@ from decimal import Decimal
 
 
 @api_view(["GET"])
-def getData(request):
-    person = {"name": "John", "age": 30, "city": "New York"}
-    return Response(person)
+def sitemap_ids(request):
+    """Ids of every public detail page, for the frontend's sitemap.xml.
+
+    Andinists without ascents are left out: their page would be empty.
+    """
+    return Response(
+        {
+            "mountains": list(Mountain.objects.order_by("pk").values_list("pk", flat=True)),
+            "routes": list(Route.objects.order_by("pk").values_list("pk", flat=True)),
+            "ascents": list(Ascent.objects.order_by("pk").values_list("pk", flat=True)),
+            "andinists": list(
+                Andinist.objects.exclude(ascent_count=0)
+                .order_by("pk")
+                .values_list("pk", flat=True)
+            ),
+        }
+    )
 
 
 class MountainsView(ListAPIView):

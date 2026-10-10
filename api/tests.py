@@ -124,3 +124,21 @@ class ApiRobustnessTests(TestCase):
         data = self.client.get(f"/djangoapi/mountain/{self.mountain.pk}/").json()
         self.assertEqual(data["first_absolute_name"], "Primera ascensión")
         self.assertEqual(data["first_absolute_team"][0][1], "Federico Reichert")
+
+
+class SitemapTests(TestCase):
+    def test_lists_public_ids(self):
+        prefix = MountainPrefix.objects.create(prefix="Cerro")
+        mountain = Mountain.objects.create(prefix=prefix, name="Plomo")
+        route = Route.objects.create(name="Normal", mountain=mountain)
+        ascent = Ascent.objects.create(name="Primera", route=route, date=datetime.date(1910, 1, 1))
+        climber = Andinist.objects.create(name="Con", surname="Ascensos")
+        ascent.andinists.add(climber)
+        Andinist.objects.create(name="Sin", surname="Ascensos")
+
+        data = self.client.get("/djangoapi/sitemap/").json()
+
+        self.assertEqual(data["mountains"], [mountain.pk])
+        self.assertEqual(data["routes"], [route.pk])
+        self.assertEqual(data["ascents"], [ascent.pk])
+        self.assertEqual(data["andinists"], [climber.pk])

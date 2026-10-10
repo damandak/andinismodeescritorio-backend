@@ -24,6 +24,7 @@ from .views import (
     MountainPrefixesView,
     MountainGroupsView,
     MountainsView,
+    sitemap_ids,
 )
 
 urlpatterns = [
@@ -85,4 +86,5 @@ urlpatterns = [
     path("regions/", RegionsView.as_view(), name="regions"),
     path("prefixes/", MountainPrefixesView.as_view(), name="prefixes"),
     path("groups/", MountainGroupsView.as_view(), name="groups"),
+    path("sitemap/", sitemap_ids, name="sitemap"),
 ]
