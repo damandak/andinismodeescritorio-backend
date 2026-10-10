@@ -1,0 +1,67 @@
+# Runs on every push and pull request: Django checks + the test suite on a
+# throwaway PostgreSQL. A red X on a commit means: don't deploy it yet.
+name: CI
+
+on:
+  push:
+  pull_request:
+
+jobs:
+  test:
+    name: Tests (Python ${{ matrix.python }})
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        # 3.10 = production today; 3.12 = the next server (Ubuntu 24.04).
+        python: ["3.10", "3.12"]
+
+    services:
+      postgres:
+        image: postgres:14
+        env:
+          POSTGRES_USER: ade
+          POSTGRES_PASSWORD: ade
+          POSTGRES_DB: ade
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U ade"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+
+    # Same variables as .env, with values that only exist inside this job.
+    env:
+      SECRET_KEY: ci-only-not-a-real-secret
+      DEBUG_BOOL: "False"
+      ALLOWED_HOSTS: localhost
+      DB_ENGINE: django.db.backends.postgresql
+      DB_NAME: ade
+      DB_USER: ade
+      DB_PASSWORD: ade
+      DB_HOST: localhost
+      DB_PORT: "5432"
+
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: actions/setup-python@v7
+        with:
+          python-version: ${{ matrix.python }}
+          cache: pip
+
+      - name: Install dependencies
+        run: pip install -r requirements.txt
+
+      - name: Django system checks
+        run: python manage.py check
+
+      - name: Models and migrations are in sync
+        run: python manage.py makemigrations --check --dry-run
+
+      - name: Migrations apply on an empty database
+        run: python manage.py migrate --noinput
+
+      - name: Test suite
+        run: python manage.py test --noinput
