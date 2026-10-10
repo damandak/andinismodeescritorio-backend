@@ -47,8 +47,27 @@ Si `which python` **no** apunta al `venv`, algo lo está tapando:
 | `ALLOWED_HOSTS` | Dominios que pueden servir el sitio, separados por coma. |
 | `DB_ENGINE`, `DB_NAME`, `DB_USER`, `DB_PASSWORD`, `DB_HOST`, `DB_PORT` | Conexión a PostgreSQL. |
 | `CORS_ALLOWED_ORIGINS` | URLs del frontend que pueden llamar a la API desde el navegador. |
+| `SECURE_HSTS_SECONDS` | Opcional. Cuánto tiempo recuerda el navegador usar siempre HTTPS. Por defecto 3600 (1 hora); cuando todo ande bien, `31536000` (1 año). |
+| `SECURE_SSL_REDIRECT` | Opcional. `True` solo si nginx no redirige ya `http://` a `https://`. |
+| `SECURE_COOKIES` | Opcional, para emergencias: `False` si el login del admin deja de funcionar porque se entra por `http://`. |
+| `CSRF_TRUSTED_ORIGINS` | Opcional. Por defecto `https://` + cada dominio de `ALLOWED_HOSTS`. |
 
 `.env.sample` tiene un ejemplo de cada una.
+
+## Seguridad del admin
+
+- **Intentos de login:** 5 contraseñas incorrectas seguidas para un mismo usuario desde una
+  misma IP bloquean ese usuario desde esa IP por 1 hora (con
+  [django-axes](https://django-axes.readthedocs.io/)). Quien intente adivinar contraseñas no te
+  bloquea a ti desde tu conexión. Los intentos se ven en el admin, en **Axes**.
+- **Desbloquear al tiro:** `python manage.py axes_reset` (todo) o
+  `python manage.py axes_reset_username <email>` (un usuario).
+- **En producción** (`DEBUG_BOOL=False`) las cookies del admin solo viajan por HTTPS y se
+  envía HSTS. Django necesita que nginx le avise que la conexión fue HTTPS y le pase la IP real:
+  `include proxy_params;` en el bloque `location` que apunta a Django ya lo hace
+  (`X-Forwarded-Proto` y `X-Forwarded-For`).
+- El admin está en español y muestra las horas en hora de Chile. Las fechas se escriben
+  `31/12/1950` (también acepta `1950-12-31`).
 
 ## Pruebas
 
@@ -74,6 +93,7 @@ todavía, revisa qué falló.
 | `python manage.py assign_first_ascents --dry-run` | Muestra qué primeros ascensos, "ascendido" y contadores de andinistas cambiarían al recalcularlos. No escribe nada. |
 | `python manage.py assign_first_ascents` | Los recalcula y guarda (en una transacción). Normalmente no hace falta: se actualizan solos al editar ascensos. |
 | `python manage.py generate_image_sizes` | Crea los tamaños de cada foto (miniatura, portada y 1.600 px) que falten. Con `--dry-run` solo cuenta; con `--list-orphans` lista archivos de `media/images` que ya nadie usa (no borra nada). Las fotos nuevas se procesan solas al subirlas. |
+| `python manage.py axes_reset` | Desbloquea a quien quedó bloqueado por intentos fallidos de login. |
 | `python manage.py populatedb` | Importación inicial desde planillas Excel (histórico, no se usa en el día a día). |
 
 Las reglas de cálculo del primer ascenso están documentadas en `cerros/derived.py`.

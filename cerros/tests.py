@@ -248,3 +248,83 @@ class ImageVariantsTests(TestCase):
         img.refresh_from_db()
         self.assertTrue(img.tb_medium)
         self.assertEqual((img.width, img.height), (1200, 800))
+
+
+class AdminSecurityTests(TestCase):
+    """Failed admin logins are limited per user and IP (django-axes)."""
+
+    LOGIN = "/admin/login/?next=/admin/"
+
+    @classmethod
+    def setUpTestData(cls):
+        from cerros.models import CustomUser
+
+        cls.user = CustomUser.objects.create_superuser("editor@example.com", "clave-correcta-123")
+
+    def login(self, password, **extra):
+        return self.client.post(
+            self.LOGIN, {"username": "editor@example.com", "password": password}, **extra
+        )
+
+    def test_blocked_after_five_failures_even_with_right_password(self):
+        for _ in range(4):
+            self.assertEqual(self.login("mala").status_code, 200)  # form with error
+        self.assertEqual(self.login("mala").status_code, 429)  # 5th: blocked
+        response = self.login("clave-correcta-123")
+        self.assertEqual(response.status_code, 429)
+        self.assertContains(response, "Acceso bloqueado", status_code=429)
+
+    def test_other_ip_is_not_blocked(self):
+        for _ in range(5):
+            self.login("mala", HTTP_X_FORWARDED_FOR="203.0.113.7")
+        self.assertEqual(self.login("mala", HTTP_X_FORWARDED_FOR="203.0.113.7").status_code, 429)
+        ok = self.login("clave-correcta-123", HTTP_X_FORWARDED_FOR="198.51.100.20")
+        self.assertEqual(ok.status_code, 302)
+
+    def test_success_resets_the_count(self):
+        for _ in range(4):
+            self.login("mala")
+        self.assertEqual(self.login("clave-correcta-123").status_code, 302)
+        self.client.logout()
+        for _ in range(4):
+            self.login("mala")
+        self.assertEqual(self.login("clave-correcta-123").status_code, 302)
+
+    def test_admin_in_spanish_and_chilean_time(self):
+        from django.conf import settings
+
+        self.assertEqual(settings.TIME_ZONE, "America/Santiago")
+        self.assertContains(self.client.get(self.LOGIN), "Contraseña")
+
+
+class SecurityHelpersTests(TestCase):
+    def request(self, remote, forwarded=None):
+        from django.test import RequestFactory
+
+        extra = {"REMOTE_ADDR": remote}
+        if forwarded is not None:
+            extra["HTTP_X_FORWARDED_FOR"] = forwarded
+        return RequestFactory().get("/", **extra)
+
+    def test_client_ip(self):
+        from adeback.security import client_ip
+
+        # Behind nginx: the last address is the one nginx saw.
+        self.assertEqual(client_ip(self.request("127.0.0.1", "1.1.1.1, 203.0.113.7")), "203.0.113.7")
+        self.assertEqual(client_ip(self.request("", "203.0.113.7")), "203.0.113.7")  # unix socket
+        # Straight from the internet: the header is ignored (could be made up).
+        self.assertEqual(client_ip(self.request("198.51.100.1", "203.0.113.7")), "198.51.100.1")
+        self.assertEqual(client_ip(self.request("127.0.0.1")), "127.0.0.1")
+
+    def test_https_origins(self):
+        from adeback.security import https_origins
+
+        self.assertEqual(
+            https_origins(["andinismodeescritorio.cl", ".www.andinismodeescritorio.cl", "localhost", ""]),
+            ["https://andinismodeescritorio.cl", "https://www.andinismodeescritorio.cl"],
+        )
+
+    def test_api_ignores_login_headers(self):
+        """The public API doesn't try to log anyone in (no 401 on a bad header)."""
+        response = self.client.get("/djangoapi/countries/", HTTP_AUTHORIZATION="Basic Zm9vOmJhcg==")
+        self.assertEqual(response.status_code, 200)

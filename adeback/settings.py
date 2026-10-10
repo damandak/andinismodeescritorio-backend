@@ -14,6 +14,8 @@ from pathlib import Path
 from dotenv import load_dotenv
 import os
 
+from .security import https_origins
+
 load_dotenv()
 
 # Build paths inside the project like this: BASE_DIR / 'subdir'.
@@ -45,7 +47,8 @@ INSTALLED_APPS = [
     'django.contrib.sessions',
     'django.contrib.messages',
     'django.contrib.staticfiles',
-    
+
+    'axes',
     'rest_framework',
     'cerros',
     'corsheaders',
@@ -61,6 +64,8 @@ MIDDLEWARE = [
     'django.contrib.auth.middleware.AuthenticationMiddleware',
     'django.contrib.messages.middleware.MessageMiddleware',
     'django.middleware.clickjacking.XFrameOptionsMiddleware',
+    # Must be last: blocks logins after too many failures (see "Seguridad").
+    'axes.middleware.AxesMiddleware',
 ]
 
 ROOT_URLCONF = 'adeback.urls'
@@ -124,9 +129,12 @@ AUTH_USER_MODEL = 'cerros.CustomUser'
 # Internationalization
 # https://docs.djangoproject.com/en/4.1/topics/i18n/
 
-LANGUAGE_CODE = 'en-us'
+# Admin in Spanish (dates as 31/12/2024) and times shown in Chilean time.
+# Dates of ascents are plain dates and don't change; only "created/updated at"
+# times are shown in local time. They are still stored in UTC.
+LANGUAGE_CODE = 'es-cl'
 
-TIME_ZONE = 'UTC'
+TIME_ZONE = 'America/Santiago'
 
 USE_I18N = True
 
@@ -159,10 +167,70 @@ if not CORS_ALLOW_ALL_ORIGINS:
     CORS_ALLOWED_ORIGIN_REGEXES = os.environ.get('CORS_ALLOWED_ORIGIN_REGEXES', 'http://localhost:3030').split(',')
 
 REST_FRAMEWORK = {
+    # The API is public and read-only: no logins through it (those go
+    # through the admin only, where failed attempts are limited).
+    'DEFAULT_AUTHENTICATION_CLASSES': [],
+    'DEFAULT_PERMISSION_CLASSES': ['rest_framework.permissions.AllowAny'],
     'DEFAULT_PAGINATION_CLASS': 'rest_framework.pagination.PageNumberPagination',
     'PAGE_SIZE': 10,
     'DEFAULT_FILTER_BACKENDS': ['django_filters.rest_framework.DjangoFilterBackend'],
 }
+
+
+# --- Seguridad ---------------------------------------------------------------
+
+def env_bool(name, default=False):
+    return os.environ.get(name, str(default)).strip().lower() in ('true', '1', 'yes')
+
+
+# Failed admin logins (django-axes): after 5 wrong passwords for the same user
+# from the same IP, that user is blocked from that IP for 1 hour. Someone
+# guessing passwords can't lock you out from your own connection.
+# Unlock by hand:  python manage.py axes_reset
+AUTHENTICATION_BACKENDS = [
+    'axes.backends.AxesStandaloneBackend',
+    'django.contrib.auth.backends.ModelBackend',
+]
+AXES_FAILURE_LIMIT = 5
+AXES_COOLOFF_TIME = 1  # hours
+AXES_LOCKOUT_PARAMETERS = [['username', 'ip_address']]
+# Users log in with their email, but the admin form field is called "username"
+# (axes would otherwise look for "email" and record every attempt as anonymous).
+AXES_USERNAME_FORM_FIELD = 'username'
+AXES_RESET_ON_SUCCESS = True
+AXES_RESET_COOL_OFF_ON_FAILURE_DURING_LOCKOUT = False
+AXES_CLIENT_IP_CALLABLE = 'adeback.security.client_ip'
+AXES_LOCKOUT_TEMPLATE = 'axes_lockout.html'
+
+# Admin login form posted over HTTPS (see adeback/security.py).
+CSRF_TRUSTED_ORIGINS = [
+    o.strip() for o in os.environ.get('CSRF_TRUSTED_ORIGINS', '').split(',') if o.strip()
+] or https_origins(ALLOWED_HOSTS)
+
+# Already on by default in Django and kept explicit: no framing of the site by
+# other sites, no MIME sniffing, and only the domain is sent to other sites
+# when following a link.
+X_FRAME_OPTIONS = 'DENY'
+SECURE_CONTENT_TYPE_NOSNIFF = True
+SECURE_REFERRER_POLICY = 'strict-origin-when-cross-origin'
+SESSION_COOKIE_HTTPONLY = True
+
+if not DEBUG:
+    # nginx tells Django the visitor used HTTPS with this header
+    # (`proxy_set_header X-Forwarded-Proto $scheme;`, included in proxy_params).
+    SECURE_PROXY_SSL_HEADER = ('HTTP_X_FORWARDED_PROTO', 'https')
+    # The admin's session and CSRF cookies only travel over HTTPS. If the
+    # admin is ever reached over plain http, logging in fails: SECURE_COOKIES=False
+    # in .env undoes this while HTTPS gets fixed.
+    SESSION_COOKIE_SECURE = env_bool('SECURE_COOKIES', True)
+    CSRF_COOKIE_SECURE = SESSION_COOKIE_SECURE
+    # HSTS: browsers remember to always use HTTPS. Starts at 1 hour; once the
+    # site works fine, set SECURE_HSTS_SECONDS=31536000 (1 year) in .env.
+    SECURE_HSTS_SECONDS = int(os.environ.get('SECURE_HSTS_SECONDS', '3600'))
+    SECURE_HSTS_INCLUDE_SUBDOMAINS = env_bool('SECURE_HSTS_INCLUDE_SUBDOMAINS')
+    # nginx usually redirects http -> https already; turn on here if it doesn't.
+    SECURE_SSL_REDIRECT = env_bool('SECURE_SSL_REDIRECT')
+
 
 JAZZMIN_SETTINGS = {
     # title of the window (Will default to current_admin_site.site_title if absent or None)

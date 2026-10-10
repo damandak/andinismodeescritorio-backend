@@ -1,0 +1,33 @@
+<!doctype html>
+<html lang="es">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="robots" content="noindex">
+  <title>Acceso bloqueado · Admin de Escritorio</title>
+  <style>
+    body { margin: 0; min-height: 100vh; display: grid; place-items: center;
+           font-family: system-ui, sans-serif; background: #f4f6f9; color: #333; }
+    main { max-width: 420px; margin: 24px; padding: 28px 32px; background: #fff;
+           border-radius: 8px; box-shadow: 0 1px 4px rgba(0,0,0,.12); }
+    h1 { font-size: 1.3rem; margin: 0 0 12px; }
+    p { line-height: 1.5; margin: 0 0 10px; }
+    a { color: #d56887; }
+  </style>
+</head>
+<body>
+  <main>
+    <h1>Acceso bloqueado por 1 hora</h1>
+    <p>
+      Hubo {{ failure_limit }} intentos fallidos de inicio de sesión
+      {% if username %}con el usuario «{{ username }}»{% endif %} desde esta conexión.
+      Por seguridad, el acceso queda bloqueado durante una hora.
+    </p>
+    <p>
+      Si eres administrador del sitio, puedes desbloquearlo en el servidor con
+      <code>python manage.py axes_reset</code>.
+    </p>
+    <p><a href="/">Volver al sitio</a></p>
+  </main>
+</body>
+</html>
