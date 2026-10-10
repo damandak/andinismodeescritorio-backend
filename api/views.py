@@ -137,6 +137,17 @@ class MountainsView(ListAPIView):
             return None
         return super().paginate_queryset(queryset)
 
+    # Full lists (the home map, a mountain's nearby summits) change rarely:
+    # let browsers reuse them for a few minutes instead of downloading every
+    # mountain on each visit. Edits show up on the map within that time.
+    MAP_CACHE_SECONDS = 600
+
+    def finalize_response(self, request, response, *args, **kwargs):
+        response = super().finalize_response(request, response, *args, **kwargs)
+        if "no_pagination" in request.query_params and response.status_code == 200:
+            response["Cache-Control"] = f"public, max-age={self.MAP_CACHE_SECONDS}"
+        return response
+
 
 class MountainView(RetrieveAPIView):
     queryset = Mountain.objects.all()

@@ -142,3 +142,20 @@ class SitemapTests(TestCase):
         self.assertEqual(data["routes"], [route.pk])
         self.assertEqual(data["ascents"], [ascent.pk])
         self.assertEqual(data["andinists"], [climber.pk])
+
+
+class MapListTests(TestCase):
+    def test_full_list_is_cacheable_and_nearby_has_ascended(self):
+        prefix = MountainPrefix.objects.create(prefix="Cerro")
+        a = Mountain.objects.create(prefix=prefix, name="A", latitude=-33.0, longitude=-70.0)
+        Mountain.objects.create(prefix=prefix, name="B", latitude=-33.01, longitude=-70.01)
+
+        full = self.client.get("/djangoapi/mountains/", {"no_pagination": ""})
+        self.assertEqual(full["Cache-Control"], "public, max-age=600")
+
+        paged = self.client.get("/djangoapi/mountains/")
+        self.assertNotIn("max-age", paged.get("Cache-Control", ""))
+
+        nearby = self.client.get("/djangoapi/mountains/", {"nearby": a.pk, "no_pagination": ""}).json()
+        self.assertEqual([m["name"] for m in nearby], ["B"])
+        self.assertIn("ascended", nearby[0])

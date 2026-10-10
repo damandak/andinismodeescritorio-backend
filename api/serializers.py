@@ -98,7 +98,7 @@ class NearbyMountainSerializer(serializers.ModelSerializer):
 
     class Meta:
         model = Mountain
-        fields = ["id", "prefix", "name", "latitude", "longitude", "altitude"]
+        fields = ["id", "prefix", "name", "latitude", "longitude", "altitude", "ascended"]
 
 
 class BasicMountainSerializer(serializers.ModelSerializer):
