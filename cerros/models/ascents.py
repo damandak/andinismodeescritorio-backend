@@ -34,9 +34,12 @@ class Ascent(Referenceable):
     ordering = ['date']
 
   def __str__(self):
-    return self.date_tostring() + " - " + str(self.route.mountain) + " - " + self.route.name + " - " + self.name
+    return (self.date_tostring() or "sin fecha") + " - " + str(self.route.mountain) + " - " + self.route.name + " - " + self.name
 
   def date_tostring(self):
+    """"1896-xx-xx", "2023-10-xx" or "1963-02-10"; None when the date is unknown."""
+    if not self.date:
+      return None
     if self.date_format == self.YEAR:
       return self.date.strftime("%Y") + "-xx-xx"
     elif self.date_format == self.MONTHYEAR:

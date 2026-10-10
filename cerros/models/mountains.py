@@ -55,6 +55,39 @@ class Mountain(Referenceable):
   main_image = models.ForeignKey('Image', on_delete=models.SET_NULL, null=True, blank=True, related_name='mtn_main_image')
   image_set = models.ManyToManyField('Image', blank=True)
 
+  # Country and region according to the coordinates (cerros/location.py,
+  # `manage.py asignar_ubicacion`). Filled automatically, shown in the admin.
+  LOCATION_UNCHECKED = 0
+  LOCATION_NO_COORDINATES = 1
+  LOCATION_AUTO = 2
+  LOCATION_TO_REVIEW = 3
+  LOCATION_MISMATCH = 4
+  LOCATION_MATCH = 5
+  LOCATION_REVIEWED = 6
+  LOCATION_OUTSIDE = 7
+  LOCATION_STATUS_CHOICES = (
+    (LOCATION_TO_REVIEW, 'Por completar: cerca de un límite'),
+    (LOCATION_MISMATCH, 'No calza con las coordenadas'),
+    (LOCATION_AUTO, 'Asignada por coordenadas'),
+    (LOCATION_MATCH, 'Coincide con las coordenadas'),
+    (LOCATION_REVIEWED, 'Revisada a mano'),
+    (LOCATION_NO_COORDINATES, 'Sin coordenadas'),
+    (LOCATION_OUTSIDE, 'Fuera de los mapas'),
+    (LOCATION_UNCHECKED, 'Sin calcular'),
+  )
+  location_status = models.IntegerField(
+    "Estado de la ubicación", choices=LOCATION_STATUS_CHOICES, default=LOCATION_UNCHECKED,
+    help_text="Elige «Revisada a mano» cuando hayas confirmado el país y la región.",
+  )
+  suggested_country = models.ForeignKey(
+    Country, on_delete=models.SET_NULL, null=True, blank=True, related_name='+', editable=False,
+  )
+  suggested_region = models.ForeignKey(
+    Region, on_delete=models.SET_NULL, null=True, blank=True, related_name='+', editable=False,
+  )
+  location_note = models.CharField(max_length=500, blank=True, default='', editable=False)
+  border_distance = models.IntegerField(null=True, blank=True, editable=False)  # metres
+
   def __str__(self):
       return self.prefix.prefix + " " + self.name
 

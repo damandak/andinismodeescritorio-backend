@@ -328,3 +328,238 @@ class SecurityHelpersTests(TestCase):
         """The public API doesn't try to log anyone in (no 401 on a bad header)."""
         response = self.client.get("/djangoapi/countries/", HTTP_AUTHORIZATION="Basic Zm9vOmJhcg==")
         self.assertEqual(response.status_code, 200)
+
+
+class UnknownDateTests(TestCase):
+    """Ascents without a date (they used to be stored as 0001-01-01)."""
+
+    def setUp(self):
+        prefix = MountainPrefix.objects.create(prefix="Cerro")
+        self.mountain = Mountain.objects.create(prefix=prefix, name="Sin Fecha")
+        self.route = Route.objects.create(name="Normal", mountain=self.mountain)
+
+    def test_placeholder_dates_become_empty(self):
+        import importlib
+
+        from django.apps import apps
+
+        old = Ascent.objects.create(name="Comodín", route=self.route, date=datetime.date(1, 1, 1))
+        real = Ascent.objects.create(name="Real", route=self.route, date=datetime.date(1950, 2, 1))
+        migration = importlib.import_module("cerros.migrations.0030_ascent_unknown_dates")
+        migration.clear_placeholder_dates(apps, None)
+        old.refresh_from_db()
+        real.refresh_from_db()
+        self.assertIsNone(old.date)
+        self.assertEqual(real.date, datetime.date(1950, 2, 1))
+
+    def test_undated_ascent_is_not_the_first_one(self):
+        Ascent.objects.create(name="Sin fecha", route=self.route, date=None)
+        dated = Ascent.objects.create(name="Con fecha", route=self.route, date=datetime.date(1960, 1, 1))
+        self.mountain.refresh_from_db()
+        self.route.refresh_from_db()
+        self.assertEqual(self.mountain.first_absolute, dated)
+        self.assertEqual(self.route.first_ascent, dated)
+
+    def test_site_works_with_undated_ascents(self):
+        ascent = Ascent.objects.create(name="Sin fecha", route=self.route, date=None)
+        self.assertIn("sin fecha", str(ascent))
+        self.assertIsNone(ascent.date_tostring())
+        self.assertEqual(self.route.first_ascent_year(), "")
+        for url in [f"/djangoapi/ascent/{ascent.pk}/", "/djangoapi/ascent/table/",
+                    f"/djangoapi/mountain/{self.mountain.pk}/", f"/djangoapi/mountain/{self.mountain.pk}/ascents/",
+                    f"/djangoapi/route/{self.route.pk}/", "/djangoapi/route/table/"]:
+            with self.subTest(url=url):
+                self.assertEqual(self.client.get(url).status_code, 200)
+        self.assertIsNone(self.client.get(f"/djangoapi/ascent/{ascent.pk}/").json()["date_tostr"])
+
+
+class GeoTests(TestCase):
+    """Country and region from coordinates (cerros/geo.py)."""
+
+    def test_known_places(self):
+        from cerros import geo
+
+        aconcagua = geo.suggest(-32.6532, -70.0109)
+        self.assertEqual((aconcagua.place.country, aconcagua.place.region), ("Argentina", "Mendoza"))
+        self.assertTrue(aconcagua.confident)
+
+        plomo = geo.suggest(-33.2364, -70.2133)
+        self.assertEqual(plomo.place.country, "Chile")
+        self.assertIn("Metropolitana", plomo.place.region)
+        self.assertTrue(plomo.confident)
+
+        # Tupungato is on the border: never decided by the map.
+        tupungato = geo.suggest(-33.3586, -69.7703)
+        self.assertFalse(tupungato.confident)
+        self.assertLess(tupungato.distance, 500)
+        self.assertEqual(tupungato.limit, "Chile – Argentina")
+        self.assertIn("Chile", [p.country for p in tupungato.across])
+
+        self.assertIsNone(geo.suggest(-33.5, -76.0).place)  # Pacific Ocean
+
+    def test_margin(self):
+        from cerros import geo
+
+        plomo = geo.suggest(-33.2364, -70.2133, margin=10_000)
+        self.assertFalse(plomo.confident)  # ~6 km from the Valparaíso limit
+
+    def test_names(self):
+        from cerros import geo
+
+        self.assertTrue(geo.same_name("Metropolitana", "Región Metropolitana de Santiago"))
+        self.assertTrue(geo.same_name("Biobío", "Región del Bío-Bío"))
+        self.assertTrue(geo.same_name("O'Higgins", "Región del Libertador Bernardo O'Higgins"))
+        self.assertTrue(geo.same_name("Aysén", "Región de Aysén del Gral.Ibañez del Campo"))
+        self.assertFalse(geo.same_name("Los Ríos", "Región de Los Lagos"))
+
+
+class LocationTests(TestCase):
+    """Assigning and checking country/region (cerros/location.py, asignar_ubicacion)."""
+
+    @classmethod
+    def setUpTestData(cls):
+        from cerros.models import Country, Region
+
+        cls.chile = Country.objects.create(name="Chile")
+        cls.argentina = Country.objects.create(name="Argentina")
+        cls.rm = Region.objects.create(name="Metropolitana", country=cls.chile)
+        cls.valpo = Region.objects.create(name="Valparaíso", country=cls.chile)
+        cls.mendoza = Region.objects.create(name="Mendoza", country=cls.argentina)
+        cls.prefix = MountainPrefix.objects.create(prefix="Cerro")
+
+    def mountain(self, name, lat, lon, countries=(), regions=()):
+        m = Mountain.objects.create(prefix=self.prefix, name=name, latitude=lat, longitude=lon)
+        m.countries.set(countries)
+        m.regions.set(regions)
+        return m
+
+    def run_command(self, *args):
+        import os
+        import tempfile
+
+        with tempfile.TemporaryDirectory() as tmp:
+            path = os.path.join(tmp, "out.csv")
+            out = StringIO()
+            call_command("asignar_ubicacion", *args, "--csv", path, stdout=out)
+            with open(path, encoding="utf-8-sig") as fh:
+                return out.getvalue(), fh.read()
+
+    def test_far_from_limits_is_assigned_and_marked(self):
+        plomo = self.mountain("Plomo", -33.2364, -70.2133)
+        aconcagua = self.mountain("Aconcagua", -32.6532, -70.0109)
+        self.run_command()
+        for m, country, region in [(plomo, self.chile, self.rm), (aconcagua, self.argentina, self.mendoza)]:
+            m.refresh_from_db()
+            self.assertEqual(list(m.countries.all()), [country])
+            self.assertEqual(list(m.regions.all()), [region])
+            self.assertEqual(m.location_status, Mountain.LOCATION_AUTO)
+        # A second run keeps the mark.
+        self.run_command()
+        plomo.refresh_from_db()
+        self.assertEqual(plomo.location_status, Mountain.LOCATION_AUTO)
+
+    def test_near_a_limit_is_only_suggested(self):
+        tupungato = self.mountain("Tupungato", -33.3586, -69.7703)
+        self.run_command()
+        tupungato.refresh_from_db()
+        self.assertEqual(tupungato.countries.count(), 0)
+        self.assertEqual(tupungato.location_status, Mountain.LOCATION_TO_REVIEW)
+        self.assertEqual(tupungato.suggested_country, self.argentina)
+        self.assertEqual(tupungato.suggested_region, self.mendoza)
+        self.assertIn("Chile – Argentina", tupungato.location_note)
+        self.assertLess(tupungato.border_distance, 500)
+
+    def test_loaded_data_is_never_changed(self):
+        right = self.mountain("Bien", -33.2364, -70.2133, [self.chile], [self.rm])
+        wrong = self.mountain("Mal", -32.6532, -70.0109, [self.chile], [self.rm])  # Aconcagua as Chile
+        border = self.mountain("Frontera", -33.3586, -69.7703, [self.chile], [self.rm])  # either side is fine
+        self.run_command()
+        for m in (right, wrong, border):
+            m.refresh_from_db()
+            self.assertEqual(list(m.countries.all()), [self.chile])
+        self.assertEqual(right.location_status, Mountain.LOCATION_MATCH)
+        self.assertEqual(wrong.location_status, Mountain.LOCATION_MISMATCH)
+        self.assertEqual(border.location_status, Mountain.LOCATION_MATCH)
+
+    def test_missing_region_is_completed(self):
+        m = self.mountain("Solo país", -33.2364, -70.2133, [self.chile])
+        self.run_command()
+        m.refresh_from_db()
+        self.assertEqual(list(m.regions.all()), [self.rm])
+
+    def test_dry_run_writes_nothing(self):
+        m = self.mountain("Plomo", -33.2364, -70.2133)
+        sin = Mountain.objects.create(prefix=self.prefix, name="Sin coordenadas")
+        out, csv_text = self.run_command("--dry-run")
+        m.refresh_from_db()
+        self.assertEqual(m.countries.count(), 0)
+        self.assertEqual(m.location_status, Mountain.LOCATION_UNCHECKED)
+        self.assertIn("Se asignarían país/región a 1", out)
+        self.assertIn("Plomo", csv_text)
+        self.assertIn("Sin coordenadas", csv_text)
+
+    def test_reviewed_is_kept(self):
+        m = self.mountain("Revisado", -32.6532, -70.0109, [self.chile], [self.rm])
+        Mountain.objects.filter(pk=m.pk).update(location_status=Mountain.LOCATION_REVIEWED)
+        self.run_command()
+        m.refresh_from_db()
+        self.assertEqual(m.location_status, Mountain.LOCATION_REVIEWED)
+
+
+class LocationAdminTests(TestCase):
+    @classmethod
+    def setUpTestData(cls):
+        from cerros.models import Country, CustomUser, Region
+
+        cls.user = CustomUser.objects.create_superuser("editor@example.com", "clave-correcta-123")
+        cls.chile = Country.objects.create(name="Chile")
+        cls.rm = Region.objects.create(name="Metropolitana", country=cls.chile)
+        cls.prefix = MountainPrefix.objects.create(prefix="Cerro")
+
+    def setUp(self):
+        self.client.force_login(self.user)
+
+    def test_panel_filters_and_reviewing(self):
+        from cerros import location
+
+        m = Mountain.objects.create(prefix=self.prefix, name="Tupungato", latitude=-33.3586, longitude=-69.7703)
+        location.check_one(m)
+        page = self.client.get(f"/admin/cerros/mountain/{m.pk}/change/")
+        self.assertContains(page, "Por completar: cerca de un límite")
+        self.assertContains(page, "Chile – Argentina")
+
+        listing = self.client.get("/admin/cerros/mountain/", {"location_status__exact": Mountain.LOCATION_TO_REVIEW})
+        self.assertContains(listing, "Tupungato")
+        self.assertContains(self.client.get("/admin/cerros/mountain/", {"pais": "sin"}), "Tupungato")
+        self.assertNotContains(self.client.get("/admin/cerros/mountain/", {"pais": "con"}), "Tupungato")
+
+        # The editor sets country and region by hand: marked as reviewed.
+        data = {
+            "prefix": self.prefix.pk, "name": "Tupungato", "latitude": "-33.358600", "longitude": "-69.770300",
+            "countries": [self.chile.pk], "regions": [self.rm.pk], "main_altitude_source": 0,
+            "location_status": Mountain.LOCATION_TO_REVIEW, "_save": "Guardar",
+        }
+        response = self.client.post(f"/admin/cerros/mountain/{m.pk}/change/", data)
+        self.assertEqual(response.status_code, 302, getattr(response, "context", None) and response.context["adminform"].form.errors)
+        m.refresh_from_db()
+        self.assertEqual(m.location_status, Mountain.LOCATION_REVIEWED)
+
+    def test_new_mountain_is_checked_on_save(self):
+        data = {
+            "prefix": self.prefix.pk, "name": "Nuevo", "latitude": "-33.236400", "longitude": "-70.213300",
+            "main_altitude_source": 0, "location_status": Mountain.LOCATION_UNCHECKED, "_save": "Guardar",
+        }
+        response = self.client.post("/admin/cerros/mountain/add/", data)
+        self.assertEqual(response.status_code, 302, getattr(response, "context", None) and response.context["adminform"].form.errors)
+        m = Mountain.objects.get(name="Nuevo")
+        self.assertEqual(m.location_status, Mountain.LOCATION_AUTO)
+        self.assertEqual(list(m.countries.all()), [self.chile])
+
+    def test_ascent_filter_without_date(self):
+        mountain = Mountain.objects.create(prefix=self.prefix, name="X")
+        route = Route.objects.create(name="R", mountain=mountain)
+        Ascent.objects.create(name="Undated one", route=route, date=None)
+        Ascent.objects.create(name="Dated one", route=route, date=datetime.date(1950, 1, 1))
+        page = self.client.get("/admin/cerros/ascent/", {"fecha": "sin"})
+        self.assertContains(page, "Undated one")
+        self.assertNotContains(page, "Dated one")

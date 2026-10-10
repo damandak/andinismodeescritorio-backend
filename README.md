@@ -94,9 +94,47 @@ todavía, revisa qué falló.
 | `python manage.py assign_first_ascents` | Los recalcula y guarda (en una transacción). Normalmente no hace falta: se actualizan solos al editar ascensos. |
 | `python manage.py generate_image_sizes` | Crea los tamaños de cada foto (miniatura, portada y 1.600 px) que falten. Con `--dry-run` solo cuenta; con `--list-orphans` lista archivos de `media/images` que ya nadie usa (no borra nada). Las fotos nuevas se procesan solas al subirlas. |
 | `python manage.py axes_reset` | Desbloquea a quien quedó bloqueado por intentos fallidos de login. |
+| `python manage.py asignar_ubicacion --dry-run` | Muestra qué país y región se asignaría a cada cerro según sus coordenadas, y deja un CSV (para Excel) con todos. No escribe nada. Ver "Ubicación según coordenadas". |
+| `python manage.py asignar_ubicacion` | Lo aplica. `--margen 500` cambia la distancia mínima al límite (por defecto 2000 m). |
 | `python manage.py populatedb` | Importación inicial desde planillas Excel (histórico, no se usa en el día a día). |
 
 Las reglas de cálculo del primer ascenso están documentadas en `cerros/derived.py`.
+
+## Revisar datos en el admin
+
+- **Cerros:** filtros por estado de la ubicación, sin país, sin región, sin altitud y sin
+  coordenadas (columna derecha de la lista).
+- **Ascensos:** filtro "Fecha: sin fecha". Un ascenso sin fecha se guarda con la fecha vacía
+  (ya no hace falta poner 0001-01-01) y queda al final al ordenar por fecha, sin contar como
+  primer ascenso frente a uno con fecha.
+
+## Ubicación según coordenadas
+
+`python manage.py asignar_ubicacion` (con `--dry-run` primero) calcula para cada cerro su país y
+región según sus coordenadas:
+
+| Estado | Qué significa |
+| --- | --- |
+| Asignada por coordenadas | No tenía país/región, está a 2 km o más de cualquier límite y se le asignaron. |
+| Por completar: cerca de un límite | No tiene país/región y está a menos de 2 km de un límite: no se asigna. Su ficha en el admin muestra la sugerencia, la distancia al límite y qué hay al otro lado. |
+| No calza con las coordenadas | El país o la región cargados no coinciden con las coordenadas (cerca de un límite, cualquiera de los dos lados cuenta como correcto). Revisar coordenadas o datos. |
+| Coincide con las coordenadas | Todo bien. |
+| Revisada a mano | Lo marcó un editor (o cambió el país/región en el admin). El comando no la toca. |
+
+- **Nunca cambia un país o región ya cargado**: solo completa los que faltan.
+- Al guardar un cerro en el admin con coordenadas nuevas se recalcula solo. Al cambiar su país o
+  región a mano queda "Revisada a mano".
+- Acciones en la lista de cerros: "Usar país y región sugeridos", "Marcar ubicación como revisada"
+  y "Recalcular ubicación según coordenadas".
+- Si una región del mapa no existe en la base (o se llama distinto), no se asigna y la ficha lo
+  dice: crea o renombra la región y vuelve a correr el comando.
+
+**Mapas** (`cerros/geodata/limits.json.gz`, se regeneran con `cerros/geodata/build_limits.py`):
+regiones de Chile y límite internacional de la Biblioteca del Congreso Nacional de Chile (BCN),
+vía [geoBoundaries](https://www.geoboundaries.org/), licencia CC BY 3.0 IGO, precisos a unas
+decenas de metros; provincias de Argentina, Bolivia y Perú de
+[Natural Earth](https://www.naturalearthdata.com/) (dominio público), aproximadas (1 a 3 km),
+por lo que sus límites internos llevan 3 km extra de margen.
 
 ## Desplegar en producción
 

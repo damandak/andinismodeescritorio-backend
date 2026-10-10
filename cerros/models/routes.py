@@ -143,7 +143,7 @@ class Route(Referenceable):
     return str(self.mountain) + " - " + self.name
 
   def first_ascent_year(self):
-    if self.first_ascent:
+    if self.first_ascent and self.first_ascent.date:
       return self.first_ascent.date.year
     return ""
 
