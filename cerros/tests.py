@@ -142,3 +142,109 @@ class DerivedFieldsTests(TestCase):
         self.assertTrue(self.mountain.ascended)
         self.assertEqual(self.route.first_ascent, first)
         self.assertEqual(self.palominos.ascent_count, 1)
+
+
+import os
+import shutil
+import tempfile
+from io import BytesIO
+
+from django.core.files.base import ContentFile
+from django.test import override_settings
+from PIL import Image as PILImage
+
+from cerros.models import Image
+
+
+def _jpeg(size, color=(90, 120, 150), orientation=None):
+    buffer = BytesIO()
+    img = PILImage.new("RGB", size, color)
+    exif = PILImage.Exif()
+    if orientation:
+        exif[0x0112] = orientation
+    img.save(buffer, "JPEG", exif=exif.tobytes())
+    return buffer.getvalue()
+
+
+def _png_transparent(size):
+    buffer = BytesIO()
+    PILImage.new("RGBA", size, (255, 0, 0, 0)).save(buffer, "PNG")
+    return buffer.getvalue()
+
+
+class ImageVariantsTests(TestCase):
+    def setUp(self):
+        self.media = tempfile.mkdtemp()
+        self.override = override_settings(MEDIA_ROOT=self.media)
+        self.override.enable()
+
+    def tearDown(self):
+        self.override.disable()
+        shutil.rmtree(self.media, ignore_errors=True)
+
+    def make(self, data, name="foto.jpg"):
+        img = Image(name="Foto")
+        img.image.save(name, ContentFile(data), save=False)
+        img.save()
+        return img
+
+    def size(self, field_file):
+        with PILImage.open(field_file.path) as im:
+            return im.size
+
+    def files(self):
+        return sorted(os.listdir(os.path.join(self.media, "images")))
+
+    def test_sizes_of_each_variant(self):
+        img = self.make(_jpeg((3000, 2000)))
+        self.assertEqual((img.width, img.height), (3000, 2000))
+        self.assertEqual(self.size(img.tb_item_cover), (600, 400))
+        self.assertEqual(self.size(img.tb_small)[1], 100)
+        self.assertEqual(self.size(img.tb_medium), (1600, 1067))
+
+    def test_phone_photo_is_rotated(self):
+        # Stored 3000x2000 with "rotate 90°" in EXIF: displayed portrait.
+        img = self.make(_jpeg((3000, 2000), orientation=6))
+        self.assertEqual((img.width, img.height), (2000, 3000))
+        w, h = self.size(img.tb_medium)
+        self.assertLess(w, h)
+
+    def test_transparent_png_works(self):
+        img = self.make(_png_transparent((800, 600)), name="logo.png")
+        with PILImage.open(img.tb_item_cover.path) as im:
+            self.assertEqual(im.mode, "RGB")
+            self.assertEqual(im.getpixel((5, 5)), (255, 255, 255))
+
+    def test_saving_again_does_not_regenerate(self):
+        img = self.make(_jpeg((1200, 800)))
+        before = self.files()
+        img = Image.objects.get(pk=img.pk)
+        img.description = "Otra descripción"
+        img.save()
+        self.assertEqual(self.files(), before)
+
+    def test_replacing_the_photo_removes_old_thumbnails(self):
+        img = self.make(_jpeg((1200, 800)))
+        old_cover = img.tb_item_cover.name
+        img = Image.objects.get(pk=img.pk)
+        img.image.save("nueva.jpg", ContentFile(_jpeg((900, 900))), save=False)
+        img.save()
+        self.assertNotIn(os.path.basename(old_cover), self.files())
+        self.assertEqual((img.width, img.height), (900, 900))
+
+    def test_delete_keeps_original_removes_thumbnails(self):
+        img = self.make(_jpeg((1200, 800)))
+        original = os.path.basename(img.image.name)
+        img.delete()
+        self.assertEqual(self.files(), [original])
+
+    def test_command_fills_missing_sizes(self):
+        img = self.make(_jpeg((1200, 800)))
+        Image.objects.filter(pk=img.pk).update(tb_medium=None, width=None, height=None)
+        out = StringIO()
+        call_command("generate_image_sizes", "--dry-run", stdout=out)
+        self.assertIn("1 de 1", out.getvalue())
+        call_command("generate_image_sizes", stdout=StringIO())
+        img.refresh_from_db()
+        self.assertTrue(img.tb_medium)
+        self.assertEqual((img.width, img.height), (1200, 800))

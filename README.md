@@ -73,6 +73,7 @@ todavía, revisa qué falló.
 | --- | --- |
 | `python manage.py assign_first_ascents --dry-run` | Muestra qué primeros ascensos, "ascendido" y contadores de andinistas cambiarían al recalcularlos. No escribe nada. |
 | `python manage.py assign_first_ascents` | Los recalcula y guarda (en una transacción). Normalmente no hace falta: se actualizan solos al editar ascensos. |
+| `python manage.py generate_image_sizes` | Crea los tamaños de cada foto (miniatura, portada y 1.600 px) que falten. Con `--dry-run` solo cuenta; con `--list-orphans` lista archivos de `media/images` que ya nadie usa (no borra nada). Las fotos nuevas se procesan solas al subirlas. |
 | `python manage.py populatedb` | Importación inicial desde planillas Excel (histórico, no se usa en el día a día). |
 
 Las reglas de cálculo del primer ascenso están documentadas en `cerros/derived.py`.

@@ -10,7 +10,7 @@ from django.db.models.signals import m2m_changed, post_delete, post_save, pre_de
 from django.dispatch import receiver
 
 from .derived import refresh_andinists, refresh_mountain, refresh_route
-from .models import Ascent, Route
+from .models import Ascent, Image, Route
 
 
 def _route_ids_and_mountain(route_id):
@@ -116,3 +116,25 @@ def route_saved(sender, instance, raw=False, **kwargs):
 def route_deleted(sender, instance, **kwargs):
     if instance.mountain_id is not None:
         refresh_mountain(instance.mountain_id)
+
+
+# --- Image ----------------------------------------------------------------
+
+THUMBNAIL_FIELDS = ("tb_item_cover", "tb_small", "tb_medium")
+
+
+@receiver(post_delete, sender=Image)
+def image_deleted(sender, instance, **kwargs):
+    """Remove the generated thumbnails from disk when an Image is deleted.
+
+    The original photo is kept on purpose: database backups don't include
+    media files, so a record deleted by mistake can still be recreated.
+    """
+    for field in THUMBNAIL_FIELDS:
+        file_field = getattr(instance, field)
+        if not file_field:
+            continue
+        name = file_field.name
+        still_used = any(Image.objects.filter(**{f: name}).exists() for f in THUMBNAIL_FIELDS)
+        if not still_used:
+            file_field.storage.delete(name)

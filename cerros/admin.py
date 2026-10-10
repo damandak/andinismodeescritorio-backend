@@ -48,7 +48,7 @@ class MountainAdmin(admin.ModelAdmin):
     @admin.display(description="Main Image")
     def main_image_link(self, obj):
         if obj.main_image:
-            return obj.main_image.tb_image_tag
+            return obj.main_image.tb_image_tag()
         return "No Image"
 
     def get_queryset(self, request):

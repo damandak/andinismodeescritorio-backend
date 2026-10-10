@@ -545,12 +545,16 @@ class ImageSerializer(serializers.ModelSerializer):
             "author",
             "author_name",
             "tb_item_cover",
+            "tb_medium",
+            "width",
+            "height",
             "description",
             "date_captured",
         ]
 
     def get_author_name(self, obj):
-        return str(obj.author)
+        # Was the string "None" for photos without an author.
+        return str(obj.author) if obj.author else None
 
 
 class CountrySerializer(serializers.ModelSerializer):
