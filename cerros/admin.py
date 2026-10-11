@@ -1,5 +1,9 @@
 from django.contrib import admin
+from django.contrib.auth.admin import UserAdmin
+from django.contrib.auth.forms import UserChangeForm, UserCreationForm
+
 from .models import (
+    AndinistClaim,
     Mountain,
     MountainPrefix,
     MountainGroup,
@@ -304,12 +308,84 @@ class ImageAdmin(admin.ModelAdmin):
 admin.site.register(Image, ImageAdmin)
 
 
-class CustomUserAdmin(admin.ModelAdmin):
-    exclude = ("password",)
+class CustomUserCreationForm(UserCreationForm):
+    class Meta(UserCreationForm.Meta):
+        model = CustomUser
+        fields = ("email",)
+
+
+class CustomUserChangeForm(UserChangeForm):
+    class Meta(UserChangeForm.Meta):
+        model = CustomUser
+        fields = "__all__"
+
+
+class CustomUserAdmin(UserAdmin):
+    """Users log in with their email. To make someone an editor: tick
+    "Es staff" and add them to the "Editores" group."""
+
+    form = CustomUserChangeForm
+    add_form = CustomUserCreationForm
     ordering = ("email",)
-    list_display = ("email", "first_name", "last_name", "is_superuser")
-    search_fields = ("email", "first_name", "last_name")
-    list_filter = ("is_superuser",)
+    list_display = ("email", "public_name", "andinist", "is_staff", "is_superuser", "date_joined", "last_login")
+    search_fields = ("email", "public_name", "first_name", "last_name")
+    list_filter = ("is_staff", "is_superuser", "is_active", "groups")
+    autocomplete_fields = ("andinist",)
+    readonly_fields = ("last_login", "date_joined", "privacy_accepted_at")
+    fieldsets = (
+        (None, {"fields": ("email", "password")}),
+        ("Perfil", {"fields": ("public_name", "andinist", "first_name", "last_name", "privacy_accepted_at")}),
+        ("Permisos", {"fields": ("is_active", "is_staff", "is_superuser", "groups", "user_permissions")}),
+        ("Fechas", {"fields": ("last_login", "date_joined")}),
+    )
+    add_fieldsets = (
+        (None, {"classes": ("wide",), "fields": ("email", "public_name", "password1", "password2")}),
+    )
 
 
 admin.site.register(CustomUser, CustomUserAdmin)
+
+
+class AndinistClaimAdmin(admin.ModelAdmin):
+    """Requests "this andinist is me". Approving links the account to the profile."""
+
+    list_display = ("user", "andinist", "status", "created_at", "reviewed_by")
+    list_filter = ("status",)
+    search_fields = ("user__email", "user__public_name", "andinist__name", "andinist__surname")
+    list_select_related = ("user", "andinist", "reviewed_by")
+    readonly_fields = ("user", "andinist", "message", "created_at", "reviewed_by", "reviewed_at")
+    fields = ("user", "andinist", "message", "status", "created_at", "reviewed_by", "reviewed_at")
+    actions = ("approve", "reject")
+
+    def has_add_permission(self, request):
+        return False
+
+    @admin.action(description="Aprobar (vincula la cuenta con el andinista)")
+    def approve(self, request, queryset):
+        from django.contrib import messages
+        from django.utils import timezone
+
+        done = 0
+        for claim in queryset.filter(status=AndinistClaim.PENDING).select_related("user", "andinist"):
+            other = CustomUser.objects.filter(andinist=claim.andinist).exclude(pk=claim.user_id).first()
+            if other:
+                self.message_user(request, f"{claim.andinist} ya está vinculado a {other}.", messages.ERROR)
+                continue
+            claim.user.andinist = claim.andinist
+            claim.user.save(update_fields=["andinist"])
+            claim.status, claim.reviewed_by, claim.reviewed_at = AndinistClaim.APPROVED, request.user, timezone.now()
+            claim.save()
+            done += 1
+        self.message_user(request, f"{done} reclamos aprobados.")
+
+    @admin.action(description="Rechazar")
+    def reject(self, request, queryset):
+        from django.utils import timezone
+
+        count = queryset.filter(status=AndinistClaim.PENDING).update(
+            status=AndinistClaim.REJECTED, reviewed_by=request.user, reviewed_at=timezone.now()
+        )
+        self.message_user(request, f"{count} reclamos rechazados.")
+
+
+admin.site.register(AndinistClaim, AndinistClaimAdmin)

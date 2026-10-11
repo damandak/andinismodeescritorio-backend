@@ -33,3 +33,13 @@ def https_origins(hosts):
             continue
         origins.append(f"https://{host}")
     return origins
+
+
+def login_username(request, credentials):
+    """Account used in a login attempt, for django-axes. The admin form sends
+    it as "username", the site's login (allauth) as "email"."""
+    credentials = credentials or {}
+    value = credentials.get("username") or credentials.get("email")
+    if not value and request is not None:
+        value = request.POST.get("username") or request.POST.get("email")
+    return (value or "").strip().lower() or None

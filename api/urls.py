@@ -1,4 +1,6 @@
-from django.urls import path
+from django.urls import include, path
+
+from .account_views import ClaimView, MeView
 from .views import (
     MountainView,
     MountainRoutesView,
@@ -89,4 +91,8 @@ urlpatterns = [
     path("prefixes/", MountainPrefixesView.as_view(), name="prefixes"),
     path("groups/", MountainGroupsView.as_view(), name="groups"),
     path("sitemap/", sitemap_ids, name="sitemap"),
+    # Accounts: login/signup/passwords (allauth) and the user's own data
+    path("_allauth/", include("allauth.headless.urls")),
+    path("me/", MeView.as_view(), name="me"),
+    path("me/claim/", ClaimView.as_view(), name="me-claim"),
 ]

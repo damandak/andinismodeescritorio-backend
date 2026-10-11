@@ -18,6 +18,7 @@ class Migration(migrations.Migration):
     # resolved". It changes nothing on databases where both are applied.
     run_before = [
         ('admin', '0001_initial'),
+        ('account', '0001_initial'),  # allauth's EmailAddress points to this user model
     ]
 
     operations = [

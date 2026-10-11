@@ -108,6 +108,43 @@ Las reglas de cálculo del primer ascenso están documentadas en `cerros/derived
   (ya no hace falta poner 0001-01-01) y queda al final al ordenar por fecha, sin contar como
   primer ascenso frente a uno con fecha.
 
+## Cuentas de usuario
+
+Cualquiera puede crearse una cuenta en el sitio (`/crear-cuenta`) con nombre público, correo y
+contraseña. Lo maneja [django-allauth](https://docs.allauth.org/) a través de su API JSON, en
+`/djangoapi/_allauth/browser/v1/`; los datos propios del usuario están en `/djangoapi/me/`.
+
+- **Importante:** `ALLOWED_HOSTS` debe incluir `www.andinismodeescritorio.cl`, porque el sitio
+  llama a `/djangoapi/` en su propia dirección (nginx lo envía a Django).
+- **Editores:** en el admin, Usuarios → marcar "Es staff" y agregar al grupo **Editores** (puede
+  editar todo menos usuarios). El grupo se crea y actualiza solo con cada `migrate`. Los
+  administradores son superusuarios.
+- **Reclamos de perfil de andinista:** un usuario con el correo confirmado busca su ficha y pide
+  vincularla. En el admin, "Reclamos de perfil de andinista" → acción "Aprobar" o "Rechazar".
+- **Protección:** límites de intentos por IP y por cuenta (allauth y axes) y un campo invisible que
+  solo llenan los bots. La confirmación del correo es opcional para entrar.
+- Los textos de los correos están en `templates/account/email/`.
+
+### Enviar correos con Gmail (gratis)
+
+Sin configurar correo, los emails (confirmación, recuperar contraseña) solo quedan en el log de
+gunicorn (`sudo journalctl -u gunicorn`), así que nadie los recibe. Para enviarlos con Gmail:
+
+1. Crea una cuenta de Gmail para el sitio (o usa una existente).
+2. Activa la verificación en dos pasos: <https://myaccount.google.com/security>.
+3. Crea una contraseña de aplicación en <https://myaccount.google.com/apppasswords> (nombre:
+   "Andinismo"). Google muestra 16 letras: cópialas sin espacios.
+4. Agrega al `.env` del backend y reinicia gunicorn:
+   ```
+   EMAIL_HOST=smtp.gmail.com
+   EMAIL_PORT=587
+   EMAIL_HOST_USER=la.cuenta@gmail.com
+   EMAIL_HOST_PASSWORD=las16letras
+   ```
+5. Prueba: `python manage.py sendtestemail tu@correo.com`.
+
+Gmail permite unos 500 correos al día, más que suficiente por ahora.
+
 ## Ubicación según coordenadas
 
 `python manage.py asignar_ubicacion` (con `--dry-run` primero) calcula para cada cerro su país y

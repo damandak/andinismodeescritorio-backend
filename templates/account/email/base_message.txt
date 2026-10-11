@@ -1,0 +1,8 @@
+{% autoescape off %}Hola{% if user.public_name %}, {{ user.public_name }}{% endif %}:
+
+{% block content %}{% endblock content %}
+
+—
+Andinismo de Escritorio
+https://www.andinismodeescritorio.cl
+{% endautoescape %}

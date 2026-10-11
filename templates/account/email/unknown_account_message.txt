@@ -1,0 +1,8 @@
+{% extends "account/email/base_message.txt" %}
+{% block content %}{% autoescape off %}Alguien intentó entrar o recuperar una contraseña con este correo ({{ email }}), pero no hay ninguna cuenta registrada con él.
+
+Si fuiste tú, puedes crear una cuenta aquí:
+
+{{ signup_url }}
+
+Si no, ignora este mensaje.{% endautoescape %}{% endblock content %}

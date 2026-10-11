@@ -1,0 +1,8 @@
+{% extends "account/email/base_message.txt" %}
+{% block content %}{% autoescape off %}Gracias por crear tu cuenta en Andinismo de Escritorio.
+
+Para confirmar tu correo, abre este enlace:
+
+{{ activate_url }}
+
+Si no fuiste tú, ignora este mensaje.{% endautoescape %}{% endblock content %}

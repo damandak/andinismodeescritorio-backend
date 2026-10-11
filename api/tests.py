@@ -199,3 +199,163 @@ class ImagesBatchTests(TestCase):
 
             empty = self.client.get("/djangoapi/images/").json()
             self.assertEqual(empty["results"], [])
+
+
+class AccountTests(TestCase):
+    """Signup, login, profile and andinist claims through the site's JSON API,
+    with CSRF checks on (as the browser does it)."""
+
+    API = "/djangoapi/_allauth/browser/v1"
+
+    def setUp(self):
+        from django.core.cache import cache
+        from django.test import Client
+
+        cache.clear()  # allauth's rate limits (e.g. one confirmation email per address every 3 min)
+        self.c = Client(enforce_csrf_checks=True)
+        self.c.get(self.API + "/auth/session")  # sets the CSRF cookie
+
+    def send(self, method, url, data=None):
+        import json
+
+        return getattr(self.c, method)(
+            url, json.dumps(data or {}), content_type="application/json",
+            HTTP_X_CSRFTOKEN=self.c.cookies["csrftoken"].value,
+        )
+
+    def signup(self, **extra):
+        data = {"email": "ana@example.com", "password": "una-clave-larga-123",
+                "public_name": "Ana Pérez", "accept_privacy": True, **extra}
+        return self.send("post", self.API + "/auth/signup", data)
+
+    def test_signup_login_logout(self):
+        from django.core import mail
+
+        from cerros.models import CustomUser
+
+        with self.captureOnCommitCallbacks(execute=True):  # emails go out on commit
+            response = self.signup(public_name="  Ana   Pérez ")
+        self.assertEqual(response.status_code, 200, response.content)
+        user = CustomUser.objects.get(email="ana@example.com")
+        self.assertEqual(user.public_name, "Ana Pérez")
+        self.assertIsNotNone(user.privacy_accepted_at)
+        # Confirmation email in Spanish, with a link to the site.
+        self.assertEqual(len(mail.outbox), 1)
+        self.assertIn("https://www.andinismodeescritorio.cl/confirmar-email/", mail.outbox[0].body)
+        self.assertIn("Ana Pérez", mail.outbox[0].body)
+
+        me = self.c.get("/djangoapi/me/").json()
+        self.assertEqual(me["public_name"], "Ana Pérez")
+        self.assertFalse(me["email_verified"])
+
+        self.assertEqual(self.send("delete", self.API + "/auth/session").status_code, 401)  # logged out
+        self.assertEqual(self.c.get("/djangoapi/me/").status_code, 403)
+        login = self.send("post", self.API + "/auth/login", {"email": "ana@example.com", "password": "una-clave-larga-123"})
+        self.assertEqual(login.status_code, 200)
+        self.assertEqual(self.c.get("/djangoapi/me/").status_code, 200)
+
+    def test_signup_requires_name_and_privacy(self):
+        from cerros.models import CustomUser
+
+        response = self.signup(public_name="", accept_privacy=False)
+        self.assertEqual(response.status_code, 400)
+        params = {e["param"] for e in response.json()["errors"]}
+        self.assertEqual(params, {"public_name", "accept_privacy"})
+        self.assertFalse(CustomUser.objects.exists())
+
+    def test_honeypot_creates_no_account(self):
+        from cerros.models import CustomUser
+
+        response = self.signup(website="http://spam.example")
+        self.assertEqual(response.status_code, 400)
+        self.assertFalse(CustomUser.objects.exists())
+
+    def test_password_reset_link_goes_to_the_site(self):
+        from django.core import mail
+
+        from cerros.models import CustomUser
+
+        CustomUser.objects.create_user("ana@example.com", "una-clave-larga-123")
+        self.send("post", self.API + "/auth/password/request", {"email": "ana@example.com"})
+        self.assertEqual(len(mail.outbox), 1)
+        self.assertIn("https://www.andinismodeescritorio.cl/recuperar-clave/", mail.outbox[0].body)
+
+    def test_csrf_is_required(self):
+        import json
+
+        from django.test import Client
+
+        response = Client(enforce_csrf_checks=True).post(
+            self.API + "/auth/login", json.dumps({"email": "a@example.com", "password": "x"}),
+            content_type="application/json",
+        )
+        self.assertEqual(response.status_code, 403)
+
+    def test_public_name_and_claim(self):
+        from cerros.models import AndinistClaim
+
+        self.signup()
+        bad = self.send("patch", "/djangoapi/me/", {"public_name": "x"})
+        self.assertEqual(bad.status_code, 400)
+        ok = self.send("patch", "/djangoapi/me/", {"public_name": "Ana P."})
+        self.assertEqual(ok.json()["public_name"], "Ana P.")
+
+        brandt = Andinist.objects.create(name="Gustavo", surname="Brandt")
+        unverified = self.send("post", "/djangoapi/me/claim/", {"andinist": brandt.pk})
+        self.assertEqual(unverified.status_code, 400)  # confirm the email first
+        from allauth.account.models import EmailAddress
+
+        EmailAddress.objects.filter(email="ana@example.com").update(verified=True)
+        claim = self.send("post", "/djangoapi/me/claim/", {"andinist": brandt.pk, "message": "Soy yo"})
+        self.assertEqual(claim.status_code, 201, claim.content)
+        self.assertTrue(claim.json()["claim"]["pending"])
+        again = self.send("post", "/djangoapi/me/claim/", {"andinist": brandt.pk})
+        self.assertEqual(again.status_code, 400)
+        self.assertEqual(AndinistClaim.objects.count(), 1)
+        self.send("delete", "/djangoapi/me/claim/")
+        self.assertEqual(AndinistClaim.objects.count(), 0)
+
+
+class AccountAdminTests(TestCase):
+    def test_editor_role_and_claim_approval(self):
+        from django.contrib.auth.models import Group
+
+        from cerros.models import AndinistClaim, CustomUser
+
+        editors = Group.objects.get(name="Editores")  # created by migrate
+        self.assertTrue(editors.permissions.filter(codename="change_mountain").exists())
+        self.assertFalse(editors.permissions.filter(codename="change_customuser").exists())
+
+        admin = CustomUser.objects.create_superuser("admin@example.com", "clave-correcta-123")
+        ana = CustomUser.objects.create_user("ana@example.com", "una-clave-larga-123")
+        brandt = Andinist.objects.create(name="Gustavo", surname="Brandt")
+        claim = AndinistClaim.objects.create(user=ana, andinist=brandt)
+
+        self.client.force_login(admin)
+        response = self.client.post("/admin/cerros/andinistclaim/", {
+            "action": "approve", "_selected_action": [claim.pk],
+        })
+        self.assertEqual(response.status_code, 302)
+        ana.refresh_from_db()
+        claim.refresh_from_db()
+        self.assertEqual(ana.andinist, brandt)
+        self.assertEqual(claim.status, AndinistClaim.APPROVED)
+        self.assertEqual(claim.reviewed_by, admin)
+
+        # The admin can create a user with a password.
+        response = self.client.post("/admin/cerros/customuser/add/", {
+            "email": "nuevo@example.com", "public_name": "Nuevo", "password1": "otra-clave-larga-456",
+            "password2": "otra-clave-larga-456", "usable_password": "true", "_save": "Guardar",
+        })
+        self.assertEqual(response.status_code, 302, response.content[:500])
+        self.assertTrue(CustomUser.objects.get(email="nuevo@example.com").check_password("otra-clave-larga-456"))
+
+    def test_deleting_an_andinist_keeps_the_account(self):
+        from cerros.models import CustomUser
+
+        brandt = Andinist.objects.create(name="Gustavo", surname="Brandt")
+        ana = CustomUser.objects.create_user("ana@example.com", "x")
+        ana.andinist = brandt
+        ana.save()
+        brandt.delete()
+        self.assertTrue(CustomUser.objects.filter(email="ana@example.com").exists())

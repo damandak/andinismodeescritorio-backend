@@ -49,6 +49,9 @@ INSTALLED_APPS = [
     'django.contrib.staticfiles',
 
     'axes',
+    'allauth',
+    'allauth.account',
+    'allauth.headless',
     'rest_framework',
     'cerros',
     'corsheaders',
@@ -64,6 +67,7 @@ MIDDLEWARE = [
     'django.contrib.auth.middleware.AuthenticationMiddleware',
     'django.contrib.messages.middleware.MessageMiddleware',
     'django.middleware.clickjacking.XFrameOptionsMiddleware',
+    'allauth.account.middleware.AccountMiddleware',
     # Must be last: blocks logins after too many failures (see "Seguridad").
     'axes.middleware.AxesMiddleware',
 ]
@@ -190,22 +194,27 @@ def env_bool(name, default=False):
 AUTHENTICATION_BACKENDS = [
     'axes.backends.AxesStandaloneBackend',
     'django.contrib.auth.backends.ModelBackend',
+    'allauth.account.auth_backends.AuthenticationBackend',
 ]
 AXES_FAILURE_LIMIT = 5
 AXES_COOLOFF_TIME = 1  # hours
 AXES_LOCKOUT_PARAMETERS = [['username', 'ip_address']]
-# Users log in with their email, but the admin form field is called "username"
-# (axes would otherwise look for "email" and record every attempt as anonymous).
+# Users log in with their email: the admin form calls it "username", the
+# site's login "email" (axes would otherwise record attempts as anonymous).
 AXES_USERNAME_FORM_FIELD = 'username'
+AXES_USERNAME_CALLABLE = 'adeback.security.login_username'
 AXES_RESET_ON_SUCCESS = True
 AXES_RESET_COOL_OFF_ON_FAILURE_DURING_LOCKOUT = False
 AXES_CLIENT_IP_CALLABLE = 'adeback.security.client_ip'
 AXES_LOCKOUT_TEMPLATE = 'axes_lockout.html'
 
-# Admin login form posted over HTTPS (see adeback/security.py).
+# Public address of the site (frontend), for links in emails.
+FRONTEND_URL = os.environ.get('FRONTEND_URL', 'https://www.andinismodeescritorio.cl').rstrip('/')
+
+# Forms posted over HTTPS: the admin and the site's account pages (see adeback/security.py).
 CSRF_TRUSTED_ORIGINS = [
     o.strip() for o in os.environ.get('CSRF_TRUSTED_ORIGINS', '').split(',') if o.strip()
-] or https_origins(ALLOWED_HOSTS)
+] or sorted(set(https_origins(ALLOWED_HOSTS) + [FRONTEND_URL]))
 
 # Already on by default in Django and kept explicit: no framing of the site by
 # other sites, no MIME sniffing, and only the domain is sent to other sites
@@ -230,6 +239,50 @@ if not DEBUG:
     SECURE_HSTS_INCLUDE_SUBDOMAINS = env_bool('SECURE_HSTS_INCLUDE_SUBDOMAINS')
     # nginx usually redirects http -> https already; turn on here if it doesn't.
     SECURE_SSL_REDIRECT = env_bool('SECURE_SSL_REDIRECT')
+
+
+# --- Cuentas de usuario (django-allauth, used by the site through its JSON API)
+# The site calls /djangoapi/_allauth/browser/v1/... on its own address
+# (www.andinismodeescritorio.cl/djangoapi/ goes to Django through nginx), so
+# the session cookie works without cross-site settings.
+HEADLESS_ONLY = True
+HEADLESS_CLIENTS = ('browser',)
+HEADLESS_FRONTEND_URLS = {
+    'account_confirm_email': FRONTEND_URL + '/confirmar-email/{key}',
+    'account_reset_password': FRONTEND_URL + '/recuperar-clave',
+    'account_reset_password_from_key': FRONTEND_URL + '/recuperar-clave/{key}',
+    'account_signup': FRONTEND_URL + '/crear-cuenta',
+}
+ACCOUNT_USER_MODEL_USERNAME_FIELD = None
+ACCOUNT_LOGIN_METHODS = {'email'}
+ACCOUNT_SIGNUP_FIELDS = ['email*', 'password1*']
+# Public name, privacy consent and an invisible "website" field that only
+# spam bots fill (cerros/forms.py).
+ACCOUNT_SIGNUP_FORM_CLASS = 'cerros.forms.SignupForm'
+# Confirming the email is optional (nobody gets locked out while no mail
+# account is configured); later tickets may require it to contribute.
+ACCOUNT_EMAIL_VERIFICATION = 'optional'
+ACCOUNT_UNIQUE_EMAIL = True
+ACCOUNT_EMAIL_SUBJECT_PREFIX = '[Andinismo de Escritorio] '
+ACCOUNT_LOGOUT_ON_PASSWORD_CHANGE = False
+# allauth also limits signups, logins and password resets per IP and account.
+
+# Outgoing email. Without EMAIL_HOST (e.g. no mail account yet) emails are
+# written to the log instead of being sent. With Gmail: see README.
+if os.environ.get('EMAIL_HOST'):
+    EMAIL_BACKEND = 'django.core.mail.backends.smtp.EmailBackend'
+    EMAIL_HOST = os.environ['EMAIL_HOST']
+    EMAIL_PORT = int(os.environ.get('EMAIL_PORT', '587'))
+    EMAIL_HOST_USER = os.environ.get('EMAIL_HOST_USER', '')
+    EMAIL_HOST_PASSWORD = os.environ.get('EMAIL_HOST_PASSWORD', '')
+    EMAIL_USE_TLS = env_bool('EMAIL_USE_TLS', True)
+    EMAIL_TIMEOUT = 20
+else:
+    EMAIL_BACKEND = 'django.core.mail.backends.console.EmailBackend'
+DEFAULT_FROM_EMAIL = os.environ.get('DEFAULT_FROM_EMAIL') or (
+    f"Andinismo de Escritorio <{os.environ['EMAIL_HOST_USER']}>"
+    if os.environ.get('EMAIL_HOST_USER') else 'Andinismo de Escritorio <no-responder@andinismodeescritorio.cl>'
+)
 
 
 JAZZMIN_SETTINGS = {
