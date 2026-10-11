@@ -1,4 +1,5 @@
 from django.db import models
+from .history import HistoricalRecords
 from .base import BaseModel
 from .references import Referenceable
 
@@ -35,6 +36,8 @@ class MountainGroup(Referenceable):
   )
   group_type = models.IntegerField(choices=GROUP_TYPE_CHOICES)
   # Método para obtener longitud y latitud centro de masa de un grupo
+
+  history = HistoricalRecords()
 
   def __str__(self):
     # GROUP TYPE IN STRING

@@ -1,4 +1,5 @@
 from django.db import models
+from .history import HistoricalRecords
 from .base import BaseModel
 from .geography import Country
 from .references import Referenceable
@@ -33,7 +34,12 @@ class Andinist(Referenceable):
 
     main_image = models.ForeignKey('Image', on_delete=models.SET_NULL, null=True, blank=True, related_name='andinist_main_image')
     image_set = models.ManyToManyField('Image', blank=True)
-    
+
+    history = HistoricalRecords(
+        m2m_fields=["clubs", "nationalities"],
+        excluded_fields=["ascent_count", "new_routes_count", "first_ascent_count"],
+    )
+
     def __str__(self):
         if self.name and self.surname:
             return self.name + ' ' + self.surname

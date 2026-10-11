@@ -359,3 +359,260 @@ class AccountAdminTests(TestCase):
         ana.save()
         brandt.delete()
         self.assertTrue(CustomUser.objects.filter(email="ana@example.com").exists())
+
+
+class ProposalTests(TestCase):
+    """Users propose changes from the site; editors review them in the admin;
+    approved ones are applied, credited and recorded in the internal history."""
+
+    @classmethod
+    def setUpTestData(cls):
+        from allauth.account.models import EmailAddress
+
+        from cerros.models import Country, CustomUser
+
+        cls.cerro = MountainPrefix.objects.create(prefix="Cerro")
+        cls.chile = Country.objects.create(name="Chile")
+        cls.plomo = Mountain.objects.create(prefix=cls.cerro, name="El Plomo", altitude_igm=5424,
+                                            latitude="-33.236155", longitude="-70.214494")
+        cls.route = Route.objects.create(name="Normal", mountain=cls.plomo)
+        cls.brandt = Andinist.objects.create(name="Gustavo", surname="Brandt")
+        cls.luck = Andinist.objects.create(name="Rodolfo", surname="Luck")
+        cls.ascent = Ascent.objects.create(name="Primera", route=cls.route, date=datetime.date(1896, 1, 1),
+                                           date_format=Ascent.YEAR)
+        cls.ascent.andinists.add(cls.brandt)
+        cls.ana = CustomUser.objects.create_user("ana@example.com", "una-clave-larga-123")
+        cls.ana.public_name = "Ana Pérez"
+        cls.ana.save()
+        EmailAddress.objects.create(user=cls.ana, email=cls.ana.email, verified=True, primary=True)
+        cls.unverified = CustomUser.objects.create_user("beto@example.com", "una-clave-larga-123")
+        cls.editor = CustomUser.objects.create_superuser("editor@example.com", "clave-correcta-123")
+
+    def send(self, method, url, data=None):
+        import json
+
+        return getattr(self.client, method)(url, json.dumps(data or {}), content_type="application/json")
+
+    def propose(self, model="cerro", target_id="plomo", changes=None, source="Carta IGM", **extra):
+        target_id = self.plomo.pk if target_id == "plomo" else target_id
+        return self.send("post", "/djangoapi/proposals/", {
+            "model": model, "target_id": target_id, "changes": changes or {}, "source": source, **extra,
+        })
+
+    def review(self, proposal, action, message="", **values):
+        data = {"action": action, "editor_message": message}
+        data.update({f"v-{k}": v for k, v in values.items()})
+        self.client.force_login(self.editor)
+        return self.client.post(f"/admin/cerros/proposal/{proposal.pk}/change/", data)
+
+    def test_form_description_is_public(self):
+        response = self.client.get(f"/djangoapi/proposals/form/cerro/{self.plomo.pk}/")
+        self.assertEqual(response.status_code, 200)
+        fields = {f["name"]: f for f in response.json()["fields"]}
+        self.assertEqual(fields["altitude_igm"]["value"], 5424)
+        self.assertEqual(fields["latitude"]["type"], "decimal")
+        self.assertEqual(fields["countries"]["type"], "multi")
+        self.assertEqual(self.client.get("/djangoapi/proposals/form/cerro/nuevo/").json()["title"], "Cerro nuevo")
+        self.assertEqual(self.client.get("/djangoapi/proposals/form/ruta/nuevo/").status_code, 404)
+        asc = self.client.get(f"/djangoapi/proposals/form/ascenso/{self.ascent.pk}/").json()["fields"]
+        date = next(f for f in asc if f["name"] == "date")
+        self.assertEqual(date, {**date, "type": "partial_date", "value": {"date": "1896-01-01", "format": Ascent.YEAR}})
+        cordada = next(f for f in asc if f["name"] == "andinists")
+        self.assertEqual(cordada["value"], [{"id": self.brandt.pk, "name": "Gustavo Brandt"}])
+
+    def test_who_can_propose(self):
+        self.assertEqual(self.propose(changes={"altitude_igm": 5430}).status_code, 403)  # anonymous
+        self.client.force_login(self.unverified)
+        response = self.propose(changes={"altitude_igm": 5430})
+        self.assertEqual(response.status_code, 403)
+        self.assertIn("Confirma tu correo", response.json()[""][0])
+
+    def test_validation(self):
+        from cerros.models import Proposal
+
+        self.client.force_login(self.ana)
+        cases = [
+            ({"altitude_igm": 5424}, "", "No cambiaste ningún dato."),  # same value
+            ({"altitude_igm": "alto"}, "altitude_igm", None),
+            ({"ascended": True}, "", "Campos no permitidos: ascended."),
+            ({"main_altitude_source": 9}, "main_altitude_source", None),
+        ]
+        for changes, key, message in cases:
+            with self.subTest(changes=changes):
+                response = self.propose(changes=changes)
+                self.assertEqual(response.status_code, 400, response.content)
+                self.assertIn(key, response.json())
+                if message:
+                    self.assertEqual(response.json()[key], [message])
+        self.assertEqual(self.propose(changes={"altitude_igm": 5430}, source="  ").json(),
+                         {"source": ["Indica la fuente de esta información."]})
+        self.assertEqual(Proposal.objects.count(), 0)
+
+        # Only what changes is kept; extra decimals are rounded; the original is remembered.
+        response = self.propose(changes={"altitude_igm": 5430, "name": "El Plomo", "latitude": "-33.23615549"})
+        self.assertEqual(response.status_code, 201, response.content)
+        proposal = Proposal.objects.get()
+        self.assertEqual(proposal.changes, {"altitude_igm": 5430})  # latitude rounds to the same value
+        self.assertEqual(proposal.original, {"altitude_igm": 5424})
+        self.assertEqual(proposal.target_label, "Cerro El Plomo")
+
+    def test_limits(self):
+        from cerros import proposals as P
+
+        self.client.force_login(self.ana)
+        for i in range(P.MAX_OPEN):
+            self.assertEqual(self.propose(changes={"altitude_igm": 5000 + i}).status_code, 201)
+        response = self.propose(changes={"altitude_igm": 4000})
+        self.assertEqual(response.status_code, 400)
+        self.assertIn("esperando revisión", response.json()[""][0])
+
+    def test_approve_with_adjustment(self):
+        from django.core import mail
+
+        from cerros.models import Proposal
+
+        self.client.force_login(self.ana)
+        self.propose(changes={"altitude_igm": 5430, "countries": [self.chile.pk]}, comment="Carta nueva")
+        proposal = Proposal.objects.get()
+        response = self.review(proposal, "approve", "Usé 5428.", altitude_igm=5428, countries=[self.chile.pk])
+        self.assertEqual(response.status_code, 302, response.content[:2000])
+        self.plomo.refresh_from_db()
+        proposal.refresh_from_db()
+        self.assertEqual(self.plomo.altitude_igm, 5428)
+        self.assertEqual(self.plomo.altitude, 5428)
+        self.assertEqual(list(self.plomo.countries.all()), [self.chile])
+        self.assertEqual(self.plomo.location_status, Mountain.LOCATION_REVIEWED)
+        self.assertEqual(proposal.status, Proposal.APPROVED)
+        self.assertEqual(proposal.applied, {"altitude_igm": 5428, "countries": [self.chile.pk]})
+        self.assertEqual(proposal.reviewed_by, self.editor)
+        # Internal history: who approved it and why.
+        last = self.plomo.history.first()
+        self.assertEqual(last.history_user, self.editor)
+        self.assertEqual(last.history_change_reason, f"Propuesta #{proposal.pk} de Ana Pérez")
+        # The author is told, with the editor's message, and credited on the record.
+        self.assertEqual(len(mail.outbox), 1)
+        self.assertIn("fue aprobada", mail.outbox[0].subject)
+        self.assertIn("Usé 5428.", mail.outbox[0].body)
+        data = self.client.get(f"/djangoapi/mountain/{self.plomo.pk}/").json()
+        self.assertEqual(data["contributors"], ["Ana Pérez"])
+
+    def test_ask_for_information_resend_and_withdraw(self):
+        from django.core import mail
+
+        from cerros.models import Proposal
+
+        self.client.force_login(self.ana)
+        self.propose("ascenso", self.ascent.pk, {"date": "1896-02-10", "date_format": Ascent.MONTHYEAR,
+                                                 "andinists": [self.brandt.pk, self.luck.pk]})
+        proposal = Proposal.objects.get()
+        self.assertEqual(proposal.changes["date"], "1896-02-10")
+        response = self.review(proposal, "needs_info")  # a message is required
+        self.assertContains(response, "Escribe qué información falta")
+        response = self.review(proposal, "needs_info", "¿Qué página de la revista?")
+        self.assertEqual(response.status_code, 302)
+        proposal.refresh_from_db()
+        self.assertEqual(proposal.status, Proposal.NEEDS_INFO)
+        self.assertIn("¿Qué página de la revista?", mail.outbox[0].body)
+        self.assertEqual(self.ascent.date, datetime.date(1896, 1, 1))  # nothing applied
+
+        self.client.force_login(self.ana)
+        mine = self.client.get("/djangoapi/me/proposals/").json()
+        self.assertEqual(mine[0]["status"], Proposal.NEEDS_INFO)
+        self.assertEqual(mine[0]["editor_message"], "¿Qué página de la revista?")
+        self.assertIn({"label": "Fecha", "value": "02/1896"}, mine[0]["changes"])
+        detail = self.client.get(f"/djangoapi/me/proposals/{proposal.pk}/").json()
+        self.assertEqual(detail["values"]["andinists"], [{"id": self.brandt.pk, "name": "Gustavo Brandt"},
+                                                         {"id": self.luck.pk, "name": "Rodolfo Luck"}])
+        response = self.send("patch", f"/djangoapi/me/proposals/{proposal.pk}/", {
+            "changes": {"date": "1896-02-10", "date_format": Ascent.MONTHYEAR, "andinists": [self.brandt.pk, self.luck.pk]},
+            "source": "Revista Andina nº 12, p. 40",
+        })
+        self.assertEqual(response.status_code, 200, response.content)
+        proposal.refresh_from_db()
+        self.assertEqual(proposal.status, Proposal.PENDING)
+        self.assertEqual(proposal.source, "Revista Andina nº 12, p. 40")
+
+        self.assertEqual(self.client.delete(f"/djangoapi/me/proposals/{proposal.pk}/").status_code, 204)
+        proposal.refresh_from_db()
+        self.assertEqual(proposal.status, Proposal.WITHDRAWN)
+        self.assertEqual(self.client.get("/djangoapi/me/proposals/").json(), [])
+        # Someone else's proposal is not found.
+        self.client.force_login(self.unverified)
+        self.assertEqual(self.client.get(f"/djangoapi/me/proposals/{proposal.pk}/").status_code, 404)
+
+    def test_approve_ascent_date_and_party(self):
+        from cerros.models import Proposal
+
+        self.client.force_login(self.ana)
+        self.propose("ascenso", self.ascent.pk, {"date": "1896-02-10", "date_format": Ascent.MONTHYEAR,
+                                                 "andinists": [self.brandt.pk, self.luck.pk]})
+        proposal = Proposal.objects.get()
+        response = self.review(proposal, "approve", date="1896-02-10", date_format=Ascent.MONTHYEAR,
+                               andinists=[self.brandt.pk, self.luck.pk])
+        self.assertEqual(response.status_code, 302, response.content[:3000])
+        self.ascent.refresh_from_db()
+        self.assertEqual((self.ascent.date, self.ascent.date_format), (datetime.date(1896, 2, 10), Ascent.MONTHYEAR))
+        self.assertEqual(set(self.ascent.andinists.all()), {self.brandt, self.luck})
+
+    def test_reject(self):
+        from cerros.models import Proposal
+
+        self.client.force_login(self.ana)
+        self.propose(changes={"altitude_igm": 6000})
+        proposal = Proposal.objects.get()
+        self.assertEqual(self.review(proposal, "reject", "Sin fuente fiable.").status_code, 302)
+        proposal.refresh_from_db()
+        self.plomo.refresh_from_db()
+        self.assertEqual((proposal.status, proposal.editor_message), (Proposal.REJECTED, "Sin fuente fiable."))
+        self.assertEqual(self.plomo.altitude_igm, 5424)
+        # A reviewed proposal can no longer be changed.
+        self.client.force_login(self.ana)
+        response = self.send("patch", f"/djangoapi/me/proposals/{proposal.pk}/", {"changes": {"altitude_igm": 6001}})
+        self.assertEqual(response.status_code, 400)
+        self.assertEqual(self.client.get(f"/djangoapi/mountain/{self.plomo.pk}/").json()["contributors"], [])
+
+    def test_new_mountain(self):
+        from cerros import proposals as P
+        from cerros.models import Proposal
+
+        self.client.force_login(self.ana)
+        response = self.propose(target_id=None, changes={"name": "Nuevo"})
+        self.assertEqual(response.json(), {"prefix": ["Este dato es obligatorio."]})
+        response = self.propose(target_id=None, changes={
+            "prefix": self.cerro.pk, "name": "Plomito", "altitude_gps": 4100,
+            "latitude": "-33.240", "longitude": "-70.220",
+        })
+        self.assertEqual(response.status_code, 201, response.content)
+        proposal = Proposal.objects.get()
+        self.assertTrue(proposal.creates)
+        self.assertEqual(proposal.changes["main_altitude_source"], Mountain.GPS)  # the altitude given
+        # The editor is warned about El Plomo, 0.6 km away.
+        self.assertEqual([m.name for m in P.similar_mountains(proposal)], ["El Plomo"])
+        self.client.force_login(self.editor)
+        self.assertContains(self.client.get(f"/admin/cerros/proposal/{proposal.pk}/change/"), "¿Ya existe?")
+        response = self.review(proposal, "approve", prefix=self.cerro.pk, name="Plomito", altitude_gps=4100,
+                               latitude="-33.240000", longitude="-70.220000", main_altitude_source=Mountain.GPS)
+        self.assertEqual(response.status_code, 302, response.content[:3000])
+        proposal.refresh_from_db()
+        new = Mountain.objects.get(name="Plomito")
+        self.assertEqual((proposal.target_id, new.altitude), (new.pk, 4100))
+        self.assertEqual(self.client.get(f"/djangoapi/mountain/{new.pk}/").json()["contributors"], ["Ana Pérez"])
+
+    def test_direct_admin_edits_are_in_the_history(self):
+        self.client.force_login(self.editor)
+        response = self.client.post(f"/admin/cerros/andinist/{self.luck.pk}/change/", {
+            "name": "Rodolfo", "surname": "Lück", "ascent_count": 0, "new_routes_count": 0, "first_ascent_count": 0,
+        })
+        self.assertEqual(response.status_code, 302, response.content[:3000])
+        self.luck.refresh_from_db()
+        self.assertEqual(self.luck.surname, "Lück")
+        last = self.luck.history.first()
+        self.assertEqual((last.history_user, last.surname, last.history_type), (self.editor, "Lück", "~"))
+        self.assertContains(self.client.get(f"/admin/cerros/andinist/{self.luck.pk}/history/"), "Lück")
+
+    def test_history_from_the_other_side_of_a_many_to_many(self):
+        before = self.ascent.history.count()
+        self.luck.ascent_set.add(self.ascent)  # adding from the andinist
+        self.assertEqual(self.ascent.history.count(), before + 1)
+        last = self.ascent.history.first()
+        self.assertEqual({a.andinist_id for a in last.andinists.all()}, {self.brandt.pk, self.luck.pk})

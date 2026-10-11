@@ -1,6 +1,7 @@
 from django.urls import include, path
 
 from .account_views import ClaimView, MeView
+from .proposal_views import MyProposalsView, MyProposalView, ProposalCreateView, ProposalFormView
 from .views import (
     MountainView,
     MountainRoutesView,
@@ -95,4 +96,9 @@ urlpatterns = [
     path("_allauth/", include("allauth.headless.urls")),
     path("me/", MeView.as_view(), name="me"),
     path("me/claim/", ClaimView.as_view(), name="me-claim"),
+    # Proposed changes (reviewed by editors in the admin)
+    path("proposals/", ProposalCreateView.as_view(), name="proposal-create"),
+    path("proposals/form/<str:slug>/<str:target>/", ProposalFormView.as_view(), name="proposal-form"),
+    path("me/proposals/", MyProposalsView.as_view(), name="my-proposals"),
+    path("me/proposals/<int:pk>/", MyProposalView.as_view(), name="my-proposal"),
 ]

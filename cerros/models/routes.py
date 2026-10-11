@@ -1,4 +1,5 @@
 from django.db import models
+from .history import HistoricalRecords
 from .base import BaseModel
 from .mountains import Mountain
 from .references import Referenceable
@@ -134,6 +135,8 @@ class Route(Referenceable):
 
   main_image = models.ForeignKey('Image', on_delete=models.SET_NULL, null=True, blank=True, related_name='route_main_image')
   image_set = models.ManyToManyField('Image', blank=True)
+
+  history = HistoricalRecords(excluded_fields=["first_ascent"])
 
   class Meta:
     verbose_name = "Ruta"

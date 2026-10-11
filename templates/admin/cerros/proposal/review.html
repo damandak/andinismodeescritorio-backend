@@ -1,0 +1,121 @@
+{% extends "admin/base_site.html" %}
+{% load i18n static %}
+
+{% block extrahead %}{{ block.super }}{{ media }}
+<style>
+  .review td, .review th { vertical-align: top; }
+  .review .proposed { background: #eef9f0; }
+  .review .stale { color: #b26b00; font-size: .85rem; display: block; margin-top: 4px; }
+  .review select[multiple] { min-height: 120px; }
+  .review .errorlist { color: #c0392b; margin: 4px 0 0; padding-left: 16px; }
+  .box-text { white-space: pre-wrap; background: #f8f9fa; padding: 10px 12px; border-radius: 4px; }
+</style>
+{% endblock %}
+
+{% block breadcrumbs %}
+<ol class="breadcrumb float-sm-right">
+  <li class="breadcrumb-item"><a href="{% url 'admin:index' %}">Inicio</a></li>
+  <li class="breadcrumb-item"><a href="{% url 'admin:cerros_proposal_changelist' %}?status__exact=0">Propuestas</a></li>
+  <li class="breadcrumb-item active">#{{ proposal.pk }}</li>
+</ol>
+{% endblock %}
+
+{% block content_title %}{{ title }}{% endblock %}
+
+{% block content %}
+<div class="review">
+  <div class="card mb-3">
+    <div class="card-body">
+      <p class="mb-1">
+        <strong>{{ proposal.get_status_display }}</strong>
+        · enviada el {{ proposal.created_at|date:"j \d\e F \d\e Y, H:i" }}
+        por <strong>{{ proposal.author.public_name|default:proposal.author.email }}</strong>
+        ({{ proposal.author.email }}; otras propuestas suyas: {{ author_stats.approved }} aprobadas, {{ author_stats.rejected }} rechazadas)
+      </p>
+      <p class="mb-0">
+        {% if proposal.creates and not proposal.target_id %}Propone un <strong>cerro nuevo</strong>.{% endif %}
+        {% if public_url %}<a href="{{ public_url }}" target="_blank" rel="noopener">Ver ficha en el sitio</a>{% endif %}
+        {% if admin_url %} · <a href="{{ admin_url }}">Editar la ficha en el admin</a> · <a href="{{ admin_url }}history/">Historial</a>{% endif %}
+      </p>
+      {% if proposal.reviewed_by %}
+        <p class="mb-0 mt-2 text-muted">Revisada por {{ proposal.reviewed_by }} el {{ proposal.reviewed_at|date:"j/m/Y H:i" }}.</p>
+      {% endif %}
+    </div>
+  </div>
+
+  {% if target_missing %}
+    <div class="alert alert-warning">La ficha ya no existe: esta propuesta no se puede aplicar. Recházala.</div>
+  {% endif %}
+  {% if similar %}
+    <div class="alert alert-warning">
+      <strong>¿Ya existe?</strong> Cerros con nombre parecido o a menos de 2 km:
+      <ul class="mb-0">{% for m in similar %}<li><a href="{% url 'admin:cerros_mountain_change' m.pk %}" target="_blank">{{ m }}</a>{% if m.main_altitude %} ({{ m.main_altitude }} m){% endif %}{% if m.km is not None %} · a {{ m.km|floatformat:1 }} km{% endif %}</li>{% endfor %}</ul>
+    </div>
+  {% endif %}
+  {% if error %}<div class="alert alert-danger">{{ error }}</div>{% endif %}
+
+  <form method="post">{% csrf_token %}
+    <div class="card mb-3">
+      <div class="card-header"><strong>Cambios propuestos</strong></div>
+      <div class="card-body p-0">
+        <table class="table mb-0">
+          <thead><tr>
+            <th style="width: 20%">Campo</th>
+            <th style="width: 25%">{% if proposal.status in open_statuses %}Valor actual{% else %}Antes{% endif %}</th>
+            <th style="width: 25%">Propuesto</th>
+            {% if can_review and form %}<th style="width: 30%">Se aplicará (puedes ajustarlo)</th>{% endif %}
+          </tr></thead>
+          <tbody>
+            {% for row in rows %}
+            <tr>
+              <th>{{ row.label }}</th>
+              <td>{% if proposal.status in open_statuses %}{{ row.current }}{% else %}{{ row.original }}{% endif %}
+                {% if row.changed_since and can_review %}<span class="stale">⚠ Cambió desde que se propuso (era: {{ row.original }})</span>{% endif %}
+              </td>
+              <td class="proposed">{{ row.proposed }}</td>
+              {% if can_review and form %}
+              <td>{% if row.field %}{{ row.field }}{{ row.field.errors }}{% endif %}</td>
+              {% endif %}
+            </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
+    </div>
+
+    <div class="row">
+      <div class="col-md-6">
+        <div class="card mb-3"><div class="card-header"><strong>Fuente</strong></div>
+          <div class="card-body"><div class="box-text">{{ proposal.source }}</div></div></div>
+      </div>
+      <div class="col-md-6">
+        <div class="card mb-3"><div class="card-header"><strong>Comentario del colaborador</strong></div>
+          <div class="card-body"><div class="box-text">{{ proposal.comment|default:"—" }}</div></div></div>
+      </div>
+    </div>
+
+    {% if applied_rows %}
+    <div class="card mb-3"><div class="card-header"><strong>Valores aplicados (ajustados por el editor)</strong></div>
+      <div class="card-body"><ul class="mb-0">{% for r in applied_rows %}<li>{{ r.label }}: {{ r.value }}</li>{% endfor %}</ul></div></div>
+    {% endif %}
+
+    {% if can_review %}
+    <div class="card mb-3">
+      <div class="card-header"><strong>Mensaje para el colaborador</strong>
+        <span class="text-muted">(obligatorio al pedir más información; opcional al aprobar o rechazar)</span></div>
+      <div class="card-body">
+        <textarea name="editor_message" class="form-control" rows="3">{{ editor_message }}</textarea>
+      </div>
+    </div>
+    <div class="mb-5">
+      {% if form %}<button type="submit" name="action" value="approve" class="btn btn-success mr-2">Aprobar y aplicar</button>{% endif %}
+      <button type="submit" name="action" value="needs_info" class="btn btn-warning mr-2">Pedir más información</button>
+      <button type="submit" name="action" value="reject" class="btn btn-outline-danger">Rechazar</button>
+    </div>
+    {% elif proposal.editor_message %}
+    <div class="card mb-3"><div class="card-header"><strong>Mensaje del editor</strong></div>
+      <div class="card-body"><div class="box-text">{{ proposal.editor_message }}</div></div></div>
+    {% endif %}
+  </form>
+</div>
+{% endblock %}

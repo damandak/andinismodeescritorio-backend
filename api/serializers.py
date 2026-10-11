@@ -16,7 +16,20 @@ from cerros.models import (
 )
 
 
-class MountainSerializer(serializers.ModelSerializer):
+
+class ContributorsMixin(serializers.Serializer):
+    """Public names of people whose proposed changes to this record were approved."""
+
+    contributors = serializers.SerializerMethodField()
+    proposal_kind = None
+
+    def get_contributors(self, obj):
+        from cerros.proposals import contributors
+
+        return contributors(self.proposal_kind, obj.pk)
+
+class MountainSerializer(ContributorsMixin, serializers.ModelSerializer):
+    proposal_kind = "mountain"
     prefix = serializers.StringRelatedField()
     first_absolute_name = serializers.SerializerMethodField()
     first_absolute_date = serializers.SerializerMethodField()
@@ -25,6 +38,7 @@ class MountainSerializer(serializers.ModelSerializer):
     class Meta:
         model = Mountain
         fields = [
+            "contributors",
             "id",
             "prefix",
             "name",
@@ -395,7 +409,8 @@ class MountainTableSerializer(serializers.ModelSerializer):
         ]
 
 
-class AscentSerializer(serializers.ModelSerializer):
+class AscentSerializer(ContributorsMixin, serializers.ModelSerializer):
+    proposal_kind = "ascent"
     route_name = serializers.SerializerMethodField()
     mountain = serializers.SerializerMethodField()
     mountain_name = serializers.SerializerMethodField()
@@ -406,6 +421,7 @@ class AscentSerializer(serializers.ModelSerializer):
     class Meta:
         model = Ascent
         fields = [
+            "contributors",
             "id",
             "name",
             "route",
@@ -441,7 +457,8 @@ class AscentSerializer(serializers.ModelSerializer):
         return obj.date_tostring()
 
 
-class RouteSerializer(serializers.ModelSerializer):
+class RouteSerializer(ContributorsMixin, serializers.ModelSerializer):
+    proposal_kind = "route"
     parent_route_name = serializers.SerializerMethodField()
     mountain_name = serializers.SerializerMethodField()
     first_ascent_name = serializers.SerializerMethodField()
@@ -451,6 +468,7 @@ class RouteSerializer(serializers.ModelSerializer):
     class Meta:
         model = Route
         fields = [
+            "contributors",
             "id",
             "parent_route",
             "parent_route_name",
@@ -503,13 +521,15 @@ class RouteSerializer(serializers.ModelSerializer):
             return None
 
 
-class AndinistSerializer(serializers.ModelSerializer):
+class AndinistSerializer(ContributorsMixin, serializers.ModelSerializer):
+    proposal_kind = "andinist"
     nationalities_tostr = serializers.SerializerMethodField()
     clubs_tostr = serializers.SerializerMethodField()
 
     class Meta:
         model = Andinist
         fields = [
+            "contributors",
             "id",
             "name",
             "surname",

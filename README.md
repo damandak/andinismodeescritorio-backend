@@ -145,6 +145,31 @@ gunicorn (`sudo journalctl -u gunicorn`), así que nadie los recibe. Para enviar
 
 Gmail permite unos 500 correos al día, más que suficiente por ahora.
 
+## Propuestas de cambios e historial
+
+Cualquier usuario con el correo confirmado puede proponer correcciones a un cerro, ruta, ascenso o
+andinista, o proponer un cerro nuevo, desde el pie de cada ficha del sitio. Nada se publica sin
+que un editor lo apruebe. Qué campos se pueden proponer, cómo se validan y aplican:
+`cerros/proposals.py`.
+
+- **Revisar:** admin → "Propuestas" (filtro "Pendiente"). Cada propuesta muestra el valor actual,
+  el propuesto y un campo editable "Se aplicará" para ajustarlo antes de aprobar, más la fuente y
+  el comentario del colaborador. Avisa si la ficha cambió desde que se propuso y, en un cerro
+  nuevo, si ya hay cerros con nombre parecido o a menos de 2 km. Botones: **Aprobar y aplicar**,
+  **Pedir más información** (el mensaje es obligatorio; el colaborador la completa y la reenvía) y
+  **Rechazar**. Tras cada una se abre la siguiente pendiente.
+- El colaborador recibe un correo con el resultado (y el mensaje del editor) y ve sus propuestas
+  en "Mi cuenta". Las aprobadas lo nombran al pie de la ficha ("Con aportes de: …", campo
+  `contributors` en la API).
+- Límites: 10 propuestas esperando revisión por persona y 20 por día.
+- **Historial interno** ([django-simple-history](https://django-simple-history.readthedocs.io/)):
+  cerros, rutas, ascensos, andinistas y grupos de montañas guardan cada cambio, hecho en el admin
+  o por una propuesta (con el motivo "Propuesta #N de …"). Se ve con el botón "Historial" de
+  cada ficha del admin, que también permite volver a una versión anterior. No es público.
+- Al instalarlo por primera vez, `python manage.py populate_history --auto` guarda el estado
+  actual de todas las fichas como punto de partida (sin eso, el historial empieza con el primer
+  cambio).
+
 ## Ubicación según coordenadas
 
 `python manage.py asignar_ubicacion` (con `--dry-run` primero) calcula para cada cerro su país y

@@ -1,9 +1,11 @@
 from django.contrib import admin
 from django.contrib.auth.admin import UserAdmin
 from django.contrib.auth.forms import UserChangeForm, UserCreationForm
+from simple_history.admin import SimpleHistoryAdmin
 
 from .models import (
     AndinistClaim,
+    Proposal,
     Mountain,
     MountainPrefix,
     MountainGroup,
@@ -72,7 +74,7 @@ class MissingDateFilter(MissingFilter):
 
 
 # Register your models here.
-class MountainAdmin(admin.ModelAdmin):
+class MountainAdmin(SimpleHistoryAdmin):
     list_display = (
         "id",
         "prefix",
@@ -201,7 +203,7 @@ class MountainInline(admin.TabularInline):
 admin.site.register(MountainPrefix)
 
 
-class MountainGroupAdmin(admin.ModelAdmin):
+class MountainGroupAdmin(SimpleHistoryAdmin):
     list_display = ("id", "name")
     search_fields = ("id", "name")
     inlines = [MountainInline]
@@ -215,7 +217,7 @@ admin.site.register(NomenclaturaSummit)
 admin.site.register(IGMMap)
 
 
-class RouteAdmin(admin.ModelAdmin):
+class RouteAdmin(SimpleHistoryAdmin):
     list_display = ("id", "name", "mountain", "first_ascent_year_display")
     list_select_related = ("mountain",)  # Reduce queries for mountain field
     search_fields = ("id", "name", "mountain__name")
@@ -243,7 +245,7 @@ class RouteAdmin(admin.ModelAdmin):
 admin.site.register(Route, RouteAdmin)
 
 
-class AndinistAdmin(admin.ModelAdmin):
+class AndinistAdmin(SimpleHistoryAdmin):
     list_display = ("id", "name", "surname")
     search_fields = ("id", "name", "surname", "clubs__name")
 
@@ -259,7 +261,7 @@ class ClubAdmin(admin.ModelAdmin):
 admin.site.register(Club, ClubAdmin)
 
 
-class AscentAdmin(admin.ModelAdmin):
+class AscentAdmin(SimpleHistoryAdmin):
     list_display = ("id", "name", "route_link", "mountain_link", "date")
     list_filter = (MissingDateFilter,)
     search_fields = (
@@ -389,3 +391,192 @@ class AndinistClaimAdmin(admin.ModelAdmin):
 
 
 admin.site.register(AndinistClaim, AndinistClaimAdmin)
+
+
+
+# --- Proposed changes: review queue -------------------------------------------
+
+class ProposalAdmin(admin.ModelAdmin):
+    """Changes proposed by users. Opening one shows the review screen: current
+    and proposed values side by side, editable before approving."""
+
+    list_display = ("id", "title_display", "author_display", "status", "created_at", "changes_count", "stale_display")
+    list_display_links = ("id", "title_display")
+    list_filter = ("status", "target_model", "creates")
+    search_fields = ("target_label", "author__email", "author__public_name", "source", "comment")
+    list_select_related = ("author", "reviewed_by")
+
+    def has_add_permission(self, request):
+        return False
+
+    def get_queryset(self, request):
+        return super().get_queryset(request).exclude(status=Proposal.WITHDRAWN)
+
+    @admin.display(description="Propuesta", ordering="target_label")
+    def title_display(self, obj):
+        kind = "Cerro nuevo" if obj.creates else obj.get_target_model_display()
+        return f"{kind}: {obj.target_label}"
+
+    @admin.display(description="Autor", ordering="author__public_name")
+    def author_display(self, obj):
+        return obj.author.public_name or obj.author.email
+
+    @admin.display(description="Campos")
+    def changes_count(self, obj):
+        return len([k for k in obj.changes if k != "date_format"])
+
+    @admin.display(description="Ficha cambió", boolean=True)
+    def stale_display(self, obj):
+        from cerros import proposals as P
+
+        if obj.status not in Proposal.OPEN or obj.creates:
+            return None
+        return any(row["changed_since"] for row in P.rows(obj)) or None  # only flag the stale ones
+
+    def change_view(self, request, object_id, form_url="", extra_context=None):
+        return self.review_view(request, object_id)
+
+    def review_form(self, proposal, data=None):
+        """Form with the proposed fields, prefilled with the proposed values."""
+        from django import forms as djforms
+        from django.contrib.admin.widgets import AutocompleteSelectMultiple
+        from django.forms import modelform_factory
+
+        from cerros import proposals as P
+
+        model = P.MODELS[proposal.target_model]
+        fields = [f for f in P.FIELDS[proposal.target_model] if f in proposal.changes]
+        widgets = {}
+        for name in fields:
+            field = model._meta.get_field(name)
+            if name in P.SEARCHED:
+                widgets[name] = AutocompleteSelectMultiple(field, admin.site, attrs={"style": "width: 100%"})
+            elif field.many_to_many:
+                widgets[name] = djforms.SelectMultiple(attrs={"class": "form-control", "size": 6})
+            elif field.get_internal_type() == "DateField":
+                widgets[name] = djforms.DateInput(attrs={"type": "date", "class": "form-control"}, format="%Y-%m-%d")
+            elif field.get_internal_type() == "TextField":
+                widgets[name] = djforms.Textarea(attrs={"class": "form-control", "rows": 4})
+            elif field.get_internal_type() == "BooleanField":
+                widgets[name] = djforms.CheckboxInput()
+            else:
+                widgets[name] = None
+        form_class = modelform_factory(model, fields=fields, widgets={k: v for k, v in widgets.items() if v})
+        instance = model() if proposal.creates else model.objects.get(pk=proposal.target_id)
+        if data is not None:
+            form = form_class(data=data, instance=instance, prefix="v")
+            if "date_format" in form.fields:
+                form.fields["date_format"].choices = list(P.DATE_FORMATS.items())
+            return form
+        initial = {}
+        for name in fields:
+            value = proposal.changes[name]
+            initial[name] = value
+        form = form_class(instance=instance, initial=initial, prefix="v")
+        if "date_format" in form.fields:
+            form.fields["date_format"].choices = list(P.DATE_FORMATS.items())
+        for name, bound in form.fields.items():
+            widget = bound.widget
+            if not isinstance(widget, (djforms.CheckboxInput, AutocompleteSelectMultiple)):
+                widget.attrs.setdefault("class", "form-control")
+        return form
+
+    def review_view(self, request, object_id):
+        from django.contrib import messages
+        from django.shortcuts import get_object_or_404, redirect
+        from django.template.response import TemplateResponse
+        from django.urls import reverse
+
+        from cerros import proposals as P
+
+        proposal = get_object_or_404(Proposal.objects.select_related("author", "reviewed_by"), pk=object_id)
+        if not self.has_view_permission(request, proposal):
+            from django.core.exceptions import PermissionDenied
+
+            raise PermissionDenied
+        can_review = proposal.status in Proposal.OPEN and self.has_change_permission(request, proposal)
+        target_missing = not proposal.creates and not P.MODELS[proposal.target_model].objects.filter(
+            pk=proposal.target_id
+        ).exists()
+        form = None if target_missing else self.review_form(proposal)
+        error = ""
+
+        if request.method == "POST" and can_review:
+            action = request.POST.get("action")
+            message = request.POST.get("editor_message", "").strip()
+            if action == "approve" and not target_missing:
+                form = self.review_form(proposal, data=request.POST)
+                if form.is_valid():
+                    kind = proposal.target_model
+                    values = {
+                        name: P.serialize(P.model_field(kind, name), form.cleaned_data[name])
+                        for name in form.fields
+                    }
+                    if "date" in values or "date_format" in values:
+                        values.setdefault("date_format", proposal.changes.get("date_format"))
+                    try:
+                        obj = P.apply(proposal, request.user, values, message)
+                    except P.ProposalError as exc:
+                        error = "; ".join(f"{k}: {', '.join(v)}" for k, v in exc.errors.items())
+                    else:
+                        verb = "creado" if proposal.creates else "actualizado"
+                        messages.success(request, f"Propuesta #{proposal.pk} aprobada: «{obj}» {verb}.")
+                        return redirect(self._next_url(proposal))
+                else:
+                    error = "Revisa los valores marcados."
+            elif action in ("needs_info", "reject"):
+                if action == "needs_info" and not message:
+                    error = "Escribe qué información falta: el colaborador verá tu mensaje."
+                else:
+                    status = Proposal.NEEDS_INFO if action == "needs_info" else Proposal.REJECTED
+                    P.close(proposal, request.user, status, message)
+                    label = "devuelta al colaborador" if status == Proposal.NEEDS_INFO else "rechazada"
+                    messages.success(request, f"Propuesta #{proposal.pk} {label}.")
+                    return redirect(self._next_url(proposal))
+
+        rows = P.rows(proposal)
+        if form is not None:
+            for row in rows:
+                row["field"] = form[row["name"]] if row["name"] in form.fields else None
+        public = P.public_url(proposal) if proposal.target_id else ""
+        admin_url = ""
+        if proposal.target_id:
+            admin_url = reverse(f"admin:cerros_{proposal.target_model}_change", args=[proposal.target_id])
+        others = proposal.author.proposals.exclude(pk=proposal.pk)
+        context = {
+            **self.admin_site.each_context(request),
+            "opts": self.model._meta,
+            "title": str(proposal),
+            "proposal": proposal,
+            "rows": rows,
+            "form": form,
+            "media": self.media + (form.media if form else self.media),
+            "can_review": can_review,
+            "open_statuses": Proposal.OPEN,
+            "target_missing": target_missing,
+            "error": error,
+            "public_url": public,
+            "admin_url": admin_url,
+            "similar": P.similar_mountains(proposal) if proposal.creates and proposal.status in Proposal.OPEN else [],
+            "author_stats": {
+                "approved": others.filter(status=Proposal.APPROVED).count(),
+                "rejected": others.filter(status=Proposal.REJECTED).count(),
+            },
+            "editor_message": request.POST.get("editor_message", proposal.editor_message),
+            "applied_rows": [
+                {"label": P.LABELS.get(k, k), "value": P.display(proposal.target_model, k, v, proposal.applied)}
+                for k, v in (proposal.applied or {}).items() if k != "date_format"
+            ],
+        }
+        return TemplateResponse(request, "admin/cerros/proposal/review.html", context)
+
+    def _next_url(self, proposal):
+        from django.urls import reverse
+
+        following = Proposal.objects.filter(status=Proposal.PENDING).exclude(pk=proposal.pk).order_by("created_at").first()
+        if following:
+            return reverse("admin:cerros_proposal_change", args=[following.pk])
+        return reverse("admin:cerros_proposal_changelist") + "?status__exact=0"
+
+
+admin.site.register(Proposal, ProposalAdmin)

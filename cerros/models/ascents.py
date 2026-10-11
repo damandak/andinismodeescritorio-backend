@@ -1,4 +1,5 @@
 from django.db import models
+from .history import HistoricalRecords
 from .routes import Route
 from .andinists import Andinist
 from .references import Referenceable
@@ -27,6 +28,8 @@ class Ascent(Referenceable):
   
   main_image = models.ForeignKey('Image', on_delete=models.SET_NULL, null=True, blank=True, related_name='ascent_main_image')
   image_set = models.ManyToManyField('Image', blank=True)
+
+  history = HistoricalRecords(m2m_fields=["andinists", "support_andinists"])
 
   class Meta:
     verbose_name = "Ascenso"

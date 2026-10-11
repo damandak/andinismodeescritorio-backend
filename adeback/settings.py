@@ -52,6 +52,7 @@ INSTALLED_APPS = [
     'allauth',
     'allauth.account',
     'allauth.headless',
+    'simple_history',
     'rest_framework',
     'cerros',
     'corsheaders',
@@ -68,6 +69,8 @@ MIDDLEWARE = [
     'django.contrib.messages.middleware.MessageMiddleware',
     'django.middleware.clickjacking.XFrameOptionsMiddleware',
     'allauth.account.middleware.AccountMiddleware',
+    # Records who made each change in the internal history (simple_history).
+    'simple_history.middleware.HistoryRequestMiddleware',
     # Must be last: blocks logins after too many failures (see "Seguridad").
     'axes.middleware.AxesMiddleware',
 ]

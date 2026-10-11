@@ -1,4 +1,5 @@
 from django.db import models
+from .history import HistoricalRecords
 
 from .base import BaseModel
 from .nomenclatura import NomenclaturaSummit
@@ -87,6 +88,13 @@ class Mountain(Referenceable):
   )
   location_note = models.CharField(max_length=500, blank=True, default='', editable=False)
   border_distance = models.IntegerField(null=True, blank=True, editable=False)  # metres
+
+  # Internal history of every change (who, when, why), shown in the admin.
+  history = HistoricalRecords(
+    m2m_fields=["countries", "regions", "mountain_group"],
+    excluded_fields=["ascended", "first_absolute", "location_status", "suggested_country",
+                     "suggested_region", "location_note", "border_distance"],
+  )
 
   def __str__(self):
       return self.prefix.prefix + " " + self.name

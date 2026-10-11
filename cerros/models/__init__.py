@@ -8,3 +8,4 @@ from .andinists import Andinist, Club
 from .ascents import Ascent
 from .references import Reference, Referenceable
 from .images import Image
+from .proposals import Proposal
